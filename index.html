@@ -28,7 +28,7 @@
             font-family: 'Inter', sans-serif;
             background-color: var(--azul-escuro);
             color: #f8fafc;
-            overflow: hidden;
+            overflow: auto;
         }
 
         /* Animação de fundo flutuante */
@@ -58,7 +58,7 @@
         .side-image {
             background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
             position: relative;
-            overflow: hidden;
+            overflow: auto;
         }
 
         /* Overlay de Suprimentos/Estoque */
@@ -124,6 +124,18 @@
             .login-container { grid-template-columns: 1fr; }
         }
 
+
+        .scroll-invisible {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .scroll-invisible::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+            display: none;
+        }
+
         .animate-slide-up {
             animation: slideUp 0.8s ease-out forwards;
         }
@@ -135,7 +147,7 @@
     </style>
 </head>
 <body>
-    <div id="app" class="min-h-screen bg-slate-950 text-slate-100">
+    <div id="app" class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
         <template v-if="!isAuthenticated">
             <div class="min-h-screen flex items-center justify-center p-4 relative">
                 <div class="bg-blob"></div>
@@ -213,7 +225,7 @@
         </template>
 
         <template v-else>
-            <div class="min-h-screen flex">
+            <div class="flex-1 min-h-0 flex">
                 <aside class="w-72 border-r border-slate-800 bg-slate-900/70 p-6 flex flex-col">
                     <h1 class="text-xl font-black text-sky-400 uppercase mb-1">Suprimentos</h1>
                     <p class="text-xs text-slate-500 mb-8">Enterprise System v2.0</p>
@@ -234,7 +246,7 @@
                     <button @click="logout" class="mt-6 w-full border border-slate-700 text-slate-200 hover:bg-slate-800/50 font-semibold py-3 rounded-2xl">Sair</button>
                 </aside>
 
-                <main class="flex-1 p-8 md:p-10">
+                <main class="flex-1 p-8 md:p-10 overflow-y-auto scroll-invisible">
                     <div class="mb-8 flex items-center justify-between">
                         <div>
                             <h2 class="text-3xl font-bold text-white">Olá, {{ session.user.nome }}</h2>
@@ -324,8 +336,10 @@
                                     <p v-if="!movimentacoesTable.rows.length && !movimentacoesTable.loading" class="p-3 text-slate-500">Sem movimentações registradas.</p>
                                 </div>
                                 <div class="flex items-center justify-end gap-2">
+                                    <button @click="goToMovimentacoesFirstPage" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Primeira</button>
                                     <button @click="goToMovimentacoesPage(movimentacoesTable.pagination.page - 1)" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
                                     <button @click="goToMovimentacoesPage(movimentacoesTable.pagination.page + 1)" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page >= movimentacoesTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
+                                    <button @click="goToMovimentacoesLastPage" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page >= movimentacoesTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Última</button>
                                 </div>
                             </div>
 
@@ -438,6 +452,7 @@
                 </main>
             </div>
         </template>
+        <footer class="border-t border-slate-800/80 bg-slate-950/90 text-slate-400 text-xs text-center py-3">copyright @SAE - Apollo Eficaz - 2026</footer>
     </div>
 
     <script>
@@ -616,6 +631,15 @@
                 const goToMovimentacoesPage = async (page) => {
                     const nextPage = Math.max(1, Number(page || 1));
                     await loadMovimentacoesTable(nextPage);
+                };
+
+                const goToMovimentacoesFirstPage = async () => {
+                    await loadMovimentacoesTable(1);
+                };
+
+                const goToMovimentacoesLastPage = async () => {
+                    const last = Number(movimentacoesTable.pagination.totalPages || 1);
+                    await loadMovimentacoesTable(last);
                 };
 
                 const formatDateBr = (isoValue) => {
@@ -1106,6 +1130,8 @@
                     closeBulkModal,
                     closeSuccessModal,
                     goToMovimentacoesPage,
+                    goToMovimentacoesFirstPage,
+                    goToMovimentacoesLastPage,
                     formatDateBr,
                     formatQuantityBr,
                     onBulkFileChange,

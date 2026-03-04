@@ -389,16 +389,29 @@ function listMovimentacoes(payload) {
     const pageSize = Math.max(1, sanitizeNumber(safe.pageSize || 20));
 
     const insumos = readTable(SAE_TABLES.INSUMOS);
-    const descricaoByUuid = insumos.reduce((acc, row) => {
-      acc[String(row.uuid)] = String(row.descricao || '');
-      return acc;
-    }, {});
+    const descricaoByUuid = {};
+    const descricaoByCodigoAX = {};
+
+    insumos.forEach(row => {
+      const ativo = String(row.ativo || 'ATIVO').toUpperCase();
+      const descricao = String(row.descricao || '').trim();
+      const uuid = String(row.uuid || '').trim();
+      const codigoAX = sanitizeCodigoAX(row.codigo_ax);
+      if (ativo === 'INATIVO' || !descricao) return;
+
+      if (uuid) {
+        descricaoByUuid[uuid] = descricao;
+      }
+      if (codigoAX) {
+        descricaoByCodigoAX[codigoAX] = descricao;
+      }
+    });
 
     let rows = readTable(SAE_TABLES.MOVIMENTACOES)
       .map(sanitizeMovementRow)
       .map(row => ({
         ...row,
-        descricao: descricaoByUuid[String(row.insumo_id)] || ''
+        descricao: descricaoByUuid[String(row.insumo_id)] || descricaoByCodigoAX[sanitizeCodigoAX(row.codigo_ax)] || ''
       }));
 
     if (safe.codigo_ax) {
