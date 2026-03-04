@@ -199,16 +199,6 @@ function updateStockLevel(payload) {
     };
 
     insertRow(SAE_TABLES.MOVIMENTACOES, movimento);
-    AuditLogger.logMovimentacao({
-      insumo_id: insumo.uuid,
-      codigo_ax: insumo.codigo_ax,
-      tipo,
-      quantidade,
-      usuario_email: payload.usuario_email,
-      saldo_anterior: saldoAnterior,
-      saldo_posterior: saldoPosterior,
-      origem: 'updateStockLevel'
-    });
 
     const enriched = getInsumosDataCore({ insumo_id: insumo.uuid }).data[0];
 

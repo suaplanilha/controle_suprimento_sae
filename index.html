@@ -281,18 +281,13 @@
                         </template>
 
                         <template v-else-if="currentPage === 'movimentacoes'">
-                            <div class="flex items-center justify-between">
+                            <div class="flex items-center justify-between gap-3">
                                 <p class="text-slate-300 text-sm">Operação manual e upload em massa de movimentações.</p>
-                                <button @click="openBulkModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Upload em Massa</button>
+                                <div class="flex gap-2">
+                                    <button @click="openManualModal" class="border border-sky-500/50 text-sky-200 rounded-xl px-4 py-2 text-sm hover:bg-sky-500/10">Lançamento Manual</button>
+                                    <button @click="openBulkModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Upload em Massa</button>
+                                </div>
                             </div>
-
-                            <form @submit.prevent="submitMovimentacao" class="grid md:grid-cols-5 gap-3">
-                                <input v-model="movForm.codigo_ax" placeholder="Código AX do Insumo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
-                                <select v-model="movForm.tipo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2"><option>ENTRADA</option><option>SAIDA</option><option>AJUSTE</option></select>
-                                <input v-model="movForm.quantidade" type="number" step="0.01" placeholder="Quantidade" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
-                                <input v-model="movForm.observacao" placeholder="Observação" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" />
-                                <button :disabled="moduleLoading" class="btn-primary rounded-xl px-3 py-2 disabled:opacity-50">Registrar</button>
-                            </form>
 
                             <div class="border border-slate-700 rounded-xl p-3">
                                 <p class="text-xs uppercase text-slate-500 mb-2">Histórico de uploads</p>
@@ -306,6 +301,27 @@
                             </div>
 
                             <p class="text-slate-400 text-sm">A auditoria (saldo anterior/posterior) é registrada automaticamente no backend.</p>
+
+                            <div v-if="manualModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div class="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-lg font-semibold">Lançamento Manual</h4>
+                                        <button @click="closeManualModal" class="text-slate-400 hover:text-white">✕</button>
+                                    </div>
+
+                                    <form @submit.prevent="submitMovimentacao" class="grid md:grid-cols-2 gap-3">
+                                        <input v-model="movForm.codigo_ax" @blur="resolveManualInsumo" placeholder="Código AX do Insumo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
+                                        <input :value="movForm.descricao" placeholder="Descrição do insumo" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2 text-slate-300" readonly />
+                                        <select v-model="movForm.tipo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2"><option>ENTRADA</option><option>SAIDA</option><option>AJUSTE</option></select>
+                                        <input v-model="movForm.quantidade" type="number" step="0.01" placeholder="Quantidade" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
+                                        <input v-model="movForm.observacao" placeholder="Observação" class="md:col-span-2 bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <div class="md:col-span-2 flex justify-end gap-2">
+                                            <button type="button" @click="closeManualModal" class="border border-slate-600 rounded-xl px-4 py-2">Cancelar</button>
+                                            <button :disabled="moduleLoading || !movForm.descricao" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">Registrar</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
 
                             <div v-if="bulkModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                                 <div class="w-full max-w-5xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-auto">
@@ -349,6 +365,7 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
                             <div v-if="processModal.open" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
                                 <div class="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-4">
                                     <div class="flex items-center gap-3">
@@ -419,12 +436,15 @@
                 const createModuleState = () => ({ dashboard: null, insumos: null, compras: null });
                 const moduleData = reactive(createModuleState());
 
-                const movForm = reactive({
+                const createMovFormState = () => ({
                     codigo_ax: '',
+                    descricao: '',
                     tipo: 'ENTRADA',
                     quantidade: '',
                     observacao: ''
                 });
+                const movForm = reactive(createMovFormState());
+                const manualModal = reactive({ open: false });
 
                 const createBulkModalState = () => ({
                     open: false,
@@ -643,9 +663,10 @@
                         };
                         const resp = await runGAS('updateStockLevel', payload);
                         if (resp.success === false) throw new Error(resp.message);
-                        movForm.quantidade = '';
-                        movForm.observacao = '';
+                        const ax = movForm.codigo_ax;
+                        closeManualModal();
                         loadCurrentModuleDebounced();
+                        openSuccessModal('Movimentação registrada com sucesso', `Código AX: ${ax} | Tipo: ${payload.tipo} | Quantidade: ${payload.quantidade}`);
                     } catch (error) {
                         errorMessage.value = error.message || String(error);
                     } finally {
@@ -660,6 +681,33 @@
 
                 const closeBulkModal = () => {
                     Object.assign(bulkModal, createBulkModalState());
+                };
+
+                const openManualModal = () => {
+                    manualModal.open = true;
+                };
+
+                const closeManualModal = () => {
+                    manualModal.open = false;
+                    Object.assign(movForm, createMovFormState());
+                };
+
+                const resolveManualInsumo = async () => {
+                    try {
+                        const codigo = String(movForm.codigo_ax || '').trim();
+                        movForm.descricao = '';
+                        if (!codigo) return;
+                        const resp = await runGAS('getInsumosData', { query: codigo });
+                        if (resp.success === false) throw new Error(resp.message);
+                        const data = Array.isArray(resp.data) ? resp.data : [];
+                        const found = data.find(item => String(item.codigo_ax || '') === codigo);
+                        if (found) {
+                            movForm.codigo_ax = found.codigo_ax;
+                            movForm.descricao = found.descricao || '';
+                        }
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    }
                 };
 
                 const openProcessModal = (title, message) => {
@@ -890,6 +938,7 @@
                     Object.assign(moduleData, createModuleState());
                     uploadHistory.value = [];
                     closeBulkModal();
+                    closeManualModal();
                     await refreshIcons();
                 };
 
@@ -906,6 +955,7 @@
                     moduleData,
                     insumosQuery,
                     movForm,
+                    manualModal,
                     uploadHistory,
                     bulkModal,
                     processModal,
@@ -917,6 +967,9 @@
                     loadCurrentModule,
                     loadInsumos,
                     submitMovimentacao,
+                    openManualModal,
+                    closeManualModal,
+                    resolveManualInsumo,
                     openBulkModal,
                     closeBulkModal,
                     closeSuccessModal,
