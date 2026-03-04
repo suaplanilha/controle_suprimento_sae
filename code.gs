@@ -382,6 +382,40 @@ function getUploadHistory(limit) {
 }
 
 
+function listMovimentacoes(payload) {
+  return executeSafely(() => {
+    const safe = payload || {};
+    const page = Math.max(1, sanitizeNumber(safe.page || 1));
+    const pageSize = Math.max(1, sanitizeNumber(safe.pageSize || 20));
+
+    const insumos = readTable(SAE_TABLES.INSUMOS);
+    const descricaoByUuid = insumos.reduce((acc, row) => {
+      acc[String(row.uuid)] = String(row.descricao || '');
+      return acc;
+    }, {});
+
+    let rows = readTable(SAE_TABLES.MOVIMENTACOES)
+      .map(sanitizeMovementRow)
+      .map(row => ({
+        ...row,
+        descricao: descricaoByUuid[String(row.insumo_id)] || ''
+      }));
+
+    if (safe.codigo_ax) {
+      const targetAX = sanitizeCodigoAX(safe.codigo_ax);
+      rows = rows.filter(row => sanitizeCodigoAX(row.codigo_ax) === targetAX);
+    }
+
+    if (safe.tipo) {
+      rows = rows.filter(row => String(row.tipo || '').toUpperCase() === String(safe.tipo).toUpperCase());
+    }
+
+    rows.sort((a, b) => String(b.data_iso || '').localeCompare(String(a.data_iso || '')));
+    return paginateRows(rows, page, pageSize);
+  }, 'listMovimentacoes');
+}
+
+
 function listInsumos(payload) {
   return executeSafely(() => {
     const safe = payload || {};

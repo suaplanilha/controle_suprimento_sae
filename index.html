@@ -302,6 +302,33 @@
 
                             <p class="text-slate-400 text-sm">A auditoria (saldo anterior/posterior) é registrada automaticamente no backend.</p>
 
+                            <div class="border border-slate-700 rounded-xl p-3 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-xs uppercase text-slate-500">Movimentações salvas</p>
+                                    <p class="text-xs text-slate-400">Página {{ movimentacoesTable.pagination.page }} de {{ movimentacoesTable.pagination.totalPages }}</p>
+                                </div>
+                                <div class="max-h-80 overflow-auto border border-slate-700 rounded-xl">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-slate-900/80"><tr><th class="p-2 text-left">Data</th><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-left">Tipo</th><th class="p-2 text-right">Quantidade</th><th class="p-2 text-left">Ações</th></tr></thead>
+                                        <tbody>
+                                            <tr v-for="row in movimentacoesTable.rows" :key="row.uuid" class="border-t border-slate-800">
+                                                <td class="p-2">{{ formatDateBr(row.data_iso) }}</td>
+                                                <td class="p-2">{{ row.codigo_ax }}</td>
+                                                <td class="p-2">{{ row.descricao || '-' }}</td>
+                                                <td class="p-2">{{ row.tipo }}</td>
+                                                <td class="p-2 text-right">{{ formatQuantityBr(row.quantidade) }}</td>
+                                                <td class="p-2"><button class="text-xs border border-slate-600 rounded px-2 py-1 opacity-70 cursor-not-allowed" disabled>Visualizar</button></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <p v-if="!movimentacoesTable.rows.length && !movimentacoesTable.loading" class="p-3 text-slate-500">Sem movimentações registradas.</p>
+                                </div>
+                                <div class="flex items-center justify-end gap-2">
+                                    <button @click="goToMovimentacoesPage(movimentacoesTable.pagination.page - 1)" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
+                                    <button @click="goToMovimentacoesPage(movimentacoesTable.pagination.page + 1)" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page >= movimentacoesTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
+                                </div>
+                            </div>
+
                             <div v-if="manualModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                                 <div class="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
                                     <div class="flex items-center justify-between">
@@ -432,6 +459,11 @@
                 const form = reactive({ email: '', password: '' });
                 const insumosQuery = ref('');
                 const uploadHistory = ref([]);
+                const movimentacoesTable = reactive({
+                    loading: false,
+                    rows: [],
+                    pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 }
+                });
                 const insumosLookupCache = reactive({ loaded: false, loading: false, loadedAt: 0, byCodigo: {} });
 
                 const createModuleState = () => ({ dashboard: null, insumos: null, compras: null });
@@ -569,6 +601,34 @@
                     uploadHistory.value = resp.data || [];
                 };
 
+                const loadMovimentacoesTable = async (page = 1) => {
+                    movimentacoesTable.loading = true;
+                    try {
+                        const resp = await runGAS('listMovimentacoes', { page, pageSize: 20 });
+                        if (resp.success === false) throw new Error(resp.message);
+                        movimentacoesTable.rows = resp.data || [];
+                        movimentacoesTable.pagination = resp.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                    } finally {
+                        movimentacoesTable.loading = false;
+                    }
+                };
+
+                const goToMovimentacoesPage = async (page) => {
+                    const nextPage = Math.max(1, Number(page || 1));
+                    await loadMovimentacoesTable(nextPage);
+                };
+
+                const formatDateBr = (isoValue) => {
+                    const dt = new Date(isoValue);
+                    if (Number.isNaN(dt.getTime())) return '-';
+                    return dt.toLocaleString('pt-BR');
+                };
+
+                const formatQuantityBr = (value) => Number(value || 0).toLocaleString('pt-BR', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2
+                });
+
                 const normalizeAx = (value) => String(value || '').trim();
 
                 const ensureInsumosLookupCache = async (forceRefresh = false) => {
@@ -619,6 +679,7 @@
                         if (currentPage.value === 'compras') await loadCompras();
                         if (currentPage.value === 'movimentacoes') {
                             await loadUploadHistory();
+                            await loadMovimentacoesTable(1);
                             await ensureInsumosLookupCache();
                         }
                     } catch (error) {
@@ -709,6 +770,7 @@
                         if (resp.success === false) throw new Error(resp.message);
                         const ax = movForm.codigo_ax;
                         closeManualModal();
+                        await loadMovimentacoesTable(1);
                         loadCurrentModuleDebounced();
                         openSuccessModal('Movimentação registrada com sucesso', `Código AX: ${ax} | Tipo: ${payload.tipo} | Quantidade: ${payload.quantidade}`);
                     } catch (error) {
@@ -953,6 +1015,7 @@
 
                         closeProcessModal();
                         closeBulkModal();
+                        await loadMovimentacoesTable(1);
                         loadCurrentModuleDebounced();
                         openSuccessModal('Upload concluído com sucesso', `ID: ${resp.upload_id} | Movimentos: ${resp.total_movimentos}`);
                     } catch (error) {
@@ -1000,6 +1063,8 @@
                     form.password = '';
                     Object.assign(moduleData, createModuleState());
                     uploadHistory.value = [];
+                    movimentacoesTable.rows = [];
+                    movimentacoesTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
                     insumosLookupCache.loaded = false;
                     insumosLookupCache.loadedAt = 0;
                     insumosLookupCache.byCodigo = {};
@@ -1023,6 +1088,7 @@
                     movForm,
                     manualModal,
                     uploadHistory,
+                    movimentacoesTable,
                     bulkModal,
                     processModal,
                     successModal,
@@ -1039,6 +1105,9 @@
                     openBulkModal,
                     closeBulkModal,
                     closeSuccessModal,
+                    goToMovimentacoesPage,
+                    formatDateBr,
+                    formatQuantityBr,
                     onBulkFileChange,
                     prepareBulkUpload,
                     saveBulkUpload,

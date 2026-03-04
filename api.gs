@@ -21,6 +21,7 @@ function dispatchApiRequest_(e) {
     login: () => doLogin(data),
     get_insumos: () => getInsumosData(data),
     get_dashboard: () => getDashboardData(data),
+    get_movimentacoes: () => listMovimentacoes(data),
     update_stock: () => updateStockLevel(data),
     prepare_bulk: () => prepareBulkMovimentacao(data),
     save_bulk: () => saveBulkMovimentacao(data)
