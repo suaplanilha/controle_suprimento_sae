@@ -1,3 +1,90 @@
+SAE - Sistema Apollo Enterprise: Programação de Insumos
+
+Este documento detalha o status atual e o planejamento do módulo de Gestão de Programação de Insumos, projetado sob a arquitetura SAE para alta performance em ambiente Google Workspace.
+
+🚀 Arquitetura do Sistema
+Frontend: Vue 3 (via CDN) em Single-File WebApp.
+Backend: Google Apps Script (V8 Engine) - Código.gs.
+Banco de Dados: Google Sheets (Arquitetura de Entidades Normalizadas).
+UI/UX: Glassmorphism Dark Mode, Mobile-first, Componentes SAE.
+
+✅ O Que Foi Realizado (Mapeamento de Dados)
+Até o momento, realizamos a análise técnica dos dados brutos fornecidos nos CSVs para estruturar as tabelas do Google Sheets:
+Entidade: Insumos (Master Data):
+Mapeado: Código AX, Descrição, Unidade de Medida, Lead Time e Fornecedor.
+Entidade: Movimentações/Estoque:
+Mapeado: Disponibilidade atual (Saldo), Consumo Médio (baseado em 2025) e Ponto de Ressuprimento (Q).
+Lógica de Negócio:
+Identificada a necessidade de cálculo de "Dias estimados para consumo" e "Giro de Estoque".
+Definição da Classe ABC baseada no consumo (Gráficos de Controle).
+Interface:
+cad_insumos
+uuid	codigo_ax	descricao	unidade	fornecedor_id	lead_time	estoque_minimo	consenso_dias	categoria	ativo	criado_em
+mov_estoque
+uuid	data_iso	insumo_id	codigo_ax	tipo	quantidade	usuario_email	observacao
+cad_fornecedores
+uuid	nome_fantasia	razao_social	cnpj	contato	telefone	email
+sys_usuarios
+uuid	nome	email	senha	permissao	paginas_acesso	status	ultimo_login
+71d0b328-2848-4b3f-b71c-60578f9f5b39	Administrador	suaplanilhaexcel@gmail.com	admin123	ADMIN	ALL	ATIVO	2026-03-02T16:44:03.718Z
+config_parametros
+parametro	valor	descricao
+dias_uteis_mes	25	Padrão de dias úteis para cálculo de consumo diário
+janela_media_meses	12	Quantidade de meses retroativos para cálculo de média mensal
+app_version	1.0.0	Versão atual do WebApp
+
+Definido o padrão visual Glassmorphism para a exibição dos cards de insumos e alertas de estoque baixo.
+📅 Próximos Passos (Task List)
+🏗️ Fase 1: Backend & Database (GAS)
+[X] Setup de Tabelas: Criar Google Sheets com abas DB_INSUMOS, DB_CONFIG e DB_MOVIMENTACOES.
+[ ] Script de Carga: Desenvolver função importCSVData() para popular as tabelas iniciais.
+[ ] Service Layer: Criar funções getInsumosData() e updateStockLevel() em Código.gs.
+[ ] UUID & ISO: Implementar gerador de IDs únicos e normalização de datas ISO.
+
+🎨 Fase 2: Frontend (Vue 3 + CSS)
+
+[ ] Boilerplate SAE: Montar estrutura HTML com Vue 3, Sidebar e Header estilo Glassmorphism.
+
+[ ] Dashboard Principal: Criar visualização de cards com indicadores (KPIs) de estoque crítico.
+
+[ ] Search Engine: Implementar filtro reativo por Código AX ou Nome do Insumo.
+
+[ ] Modais de Ação: Desenvolver modal para entrada de nova contagem ou ajuste de estoque.
+
+⚙️ Fase 3: Inteligência & Alertas
+
+[ ] Cálculo Ressuprimento: Implementar lógica de Ponto de Pedido (Lead Time x Consumo Diário).
+
+[ ] Relatório de Compras: Gerar lista automática de insumos que precisam de pedido imediato.
+
+[ ] Exportação: Função para exportar programação mensal atualizada.
+
+📱 Fase 4: PWA & Deploy
+
+[ ] Responsividade: Ajustar Grid para dispositivos móveis (Mobile-first).
+
+[ ] Offline Cache: Configurar manifest para comportamento de App Nativo.
+
+[ ] Deploy: Publicar como WebApp (Executar como: Usuário / Acesso: Qualquer pessoa com conta Google).
+
+🛠️ Stack Tecnológica
+Componente
+Tecnologia
+UI Framework
+Vue 3 (CDN)
+Styling
+
+Custom CSS (Utility-first)
+Icons
+Lucide Icons / Material Icons
+Database
+Google Sheets API
+Backend
+
+Google Apps Script (V8)
+
+Documento atualizado em: 2024-05-22
+
 Este documento descreve o status da evolução do módulo de Gestão de Programação de Insumos (GAS + Google Sheets), com foco em arquitetura orientada a serviços para operação em produção.
 
 ## 🚀 Arquitetura do Sistema
