@@ -182,31 +182,49 @@ class IdempotencyService {
   }
 
   static markAsSuccess(requestId, endpoint, resultado, usuarioEmail) {
-    const rows = readTable(SAE_TABLES.IDEMPOTENCY);
-    const sheet = getSheetOrThrow(SAE_TABLES.IDEMPOTENCY);
-    const headers = getHeaders(sheet);
+    try {
+      const rows = readTable(SAE_TABLES.IDEMPOTENCY);
+      const sheet = getSheetOrThrow(SAE_TABLES.IDEMPOTENCY);
+      const headers = getHeaders(sheet);
 
-    const existing = rows.find(r => String(r.request_id || '') === String(requestId));
-    if (!existing) {
-      saeLog_('WARN', 'IdempotencyService.markAsSuccess: Registro não encontrado', { requestId });
-      return;
+      const candidates = rows.filter(r => String(r.request_id || '') === String(requestId));
+      if (!candidates.length) {
+        saeLog_('WARN', 'IdempotencyService.markAsSuccess: Registro não encontrado', { requestId, endpoint });
+        return false;
+      }
+
+      const processing = candidates.find(r => String(r.status || '').toUpperCase() === 'PROCESSANDO');
+      const target = processing || candidates[candidates.length - 1];
+      const rowIndex = findRowIndexByUuid(sheet, target.uuid);
+      if (rowIndex < 2) {
+        saeLog_('WARN', 'IdempotencyService.markAsSuccess: Índice de linha inválido', { requestId, endpoint, uuid: target.uuid });
+        return false;
+      }
+
+      updateRowByHeaderMap(sheet, headers, rowIndex, {
+        endpoint: endpoint || target.endpoint || '',
+        status: 'SUCESSO',
+        resultado_json: JSON.stringify(resultado),
+        timestamp_processado: new Date().toISOString(),
+        observacao: 'Processado com sucesso',
+        usuario_email: String(usuarioEmail || target.usuario_email || '').trim()
+      });
+
+      saeLog_('INFO', 'IdempotencyService.markAsSuccess: Requisição finalizada', {
+        requestId,
+        endpoint,
+        usuarioEmail,
+        uuid: target.uuid
+      });
+      return true;
+    } catch (error) {
+      saeLog_('ERROR', 'IdempotencyService.markAsSuccess: Falha ao marcar sucesso', {
+        requestId,
+        endpoint,
+        error: error && error.message ? error.message : String(error)
+      });
+      return false;
     }
-
-    const rowIndex = findRowIndexByUuid(sheet, existing.uuid);
-    if (rowIndex < 2) return;
-
-    updateRowByHeaderMap(sheet, headers, rowIndex, {
-      status: 'SUCESSO',
-      resultado_json: JSON.stringify(resultado),
-      timestamp_processado: new Date().toISOString(),
-      observacao: 'Processado com sucesso'
-    });
-
-    saeLog_('INFO', 'IdempotencyService.markAsSuccess: Requisição finalizada', {
-      requestId,
-      endpoint,
-      usuarioEmail
-    });
   }
 
   static markAsFailure(requestId, endpoint, errorMessage, usuarioEmail) {

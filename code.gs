@@ -355,7 +355,16 @@ function saveBulkMovimentacao(payload) {
         request_id: requestId
       };
 
-      IdempotencyService.markAsSuccess(requestId, 'saveBulkMovimentacao', resultado, payload.usuario_email);
+      const markSuccess = IdempotencyService.markAsSuccess(requestId, 'saveBulkMovimentacao', resultado, payload.usuario_email);
+
+      if (!markSuccess) {
+        saeLog_('ERROR', 'saveBulkMovimentacao: Falha ao marcar como SUCESSO', {
+          requestId,
+          uploadId,
+          totalMovimentos: movimentos.length
+        });
+      }
+
       return resultado;
     } catch (innerError) {
       IdempotencyService.markAsFailure(requestId, 'saveBulkMovimentacao', innerError.message, payload.usuario_email);
