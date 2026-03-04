@@ -243,10 +243,15 @@ SAE.UI_TOKENS.COLORS           // Design tokens
 Arquivo `.gs` deve ser carregado nesta ordem para evitar `ReferenceError`:
 
 1. `models.gs` — Declara `var SAE = { ... }`
-2. `services.gs` — Classes e serviços que usam `SAE.*`
-3. `api.gs` — API gateway (se existir)
-4. `code.gs` — Core logic (usa `SAE.*` e serviços)
-5. Resto dos arquivos
+2. `core.gs` — Infra compartilhada (`executeSafely`, logging e utilitários)
+3. `repositories.gs` — Helpers de acesso a planilhas/tabelas
+4. `services.gs` — Classes e serviços que usam `SAE.*`
+5. `movimentacoes-service.gs` — Operações de movimentação (manual, bulk, histórico e listagem)
+6. `insumos-service.gs` — Operações de catálogo de insumos e importação CSV
+7. `fornecedores-service.gs` — Operações de fornecedores e opções
+8. `api.gs` — API gateway (se existir)
+9. `code.gs` — Fachada/core remanescente e funções transversais
+10. Resto dos arquivos
 
 ### Debugging no Console GAS
 Para testar se namespace está acessível:
