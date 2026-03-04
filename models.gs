@@ -34,7 +34,7 @@ var SAE = {
   REQUIRED_FIELDS: {
     LOGIN: ['email'],
     LOGIN_WITH_PASSWORD: ['email', 'password'],
-    MOVIMENTACAO: ['insumo_id', 'tipo', 'quantidade', 'usuario_email'],
+    MOVIMENTACAO: ['tipo', 'quantidade', 'usuario_email'],
     BULK_MOVIMENTACAO: ['rows', 'usuario_email', 'data_iso']
   },
 

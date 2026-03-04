@@ -160,6 +160,12 @@ function updateStockLevel(payload) {
     ValidationService.require(payload, 'MOVIMENTACAO');
     checkUserPermission(payload.usuario_email, 'movimentacoes');
 
+    const hasInsumoId = String(payload.insumo_id || '').trim().length > 0;
+    const hasCodigoAX = String(payload.codigo_ax || '').trim().length > 0;
+    if (!hasInsumoId && !hasCodigoAX) {
+      throw new Error('Informe código AX ou insumo_id para registrar a movimentação.');
+    }
+
     const tipo = String(payload.tipo).toUpperCase();
     if (!['ENTRADA', 'SAIDA', 'AJUSTE'].includes(tipo)) {
       throw new Error('Tipo de movimentação inválido. Use ENTRADA, SAIDA ou AJUSTE.');
@@ -170,9 +176,9 @@ function updateStockLevel(payload) {
       throw new Error('Quantidade inválida. Informe um número maior que zero.');
     }
 
-    const insumo = findById(SAE_TABLES.INSUMOS, payload.insumo_id);
+    const insumo = resolveInsumoForMovimentacao_(payload);
     if (!insumo) {
-      throw new Error('Insumo não encontrado para o ID informado.');
+      throw new Error('Insumo não encontrado para o identificador informado (codigo_ax/insumo_id).');
     }
 
     const saldoAnterior = getCurrentStockByInsumo(insumo.uuid);
@@ -1135,6 +1141,26 @@ function batchInsertRows(sheetName, rows) {
 
 function findById(sheetName, uuid) {
   return readTable(sheetName).find(row => row.uuid === uuid);
+}
+
+function findByCodigoAX(sheetName, codigoAX) {
+  const normalized = sanitizeCodigoAX(codigoAX);
+  return readTable(sheetName).find(row => sanitizeCodigoAX(row.codigo_ax) === normalized);
+}
+
+function resolveInsumoForMovimentacao_(payload) {
+  const insumoId = String(payload.insumo_id || '').trim();
+  if (insumoId) {
+    const byId = findById(SAE_TABLES.INSUMOS, insumoId);
+    if (byId) return byId;
+  }
+
+  const codigoAX = sanitizeCodigoAX(payload.codigo_ax);
+  if (codigoAX) {
+    return findByCodigoAX(SAE_TABLES.INSUMOS, codigoAX);
+  }
+
+  return null;
 }
 
 function updateUserLastLogin(userId) {
