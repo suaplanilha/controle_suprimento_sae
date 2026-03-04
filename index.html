@@ -377,6 +377,12 @@
 
         createApp({
             setup() {
+                const GAS_CLIENT_CONFIG = Object.freeze({
+                    timeoutMs: 20000,
+                    retries: 2,
+                    backoffBaseMs: 300
+                });
+
                 const loading = ref(false);
                 const moduleLoading = ref(false);
                 const errorMessage = ref('');
@@ -386,11 +392,8 @@
                 const insumosQuery = ref('');
                 const uploadHistory = ref([]);
 
-                const moduleData = reactive({
-                    dashboard: null,
-                    insumos: null,
-                    compras: null
-                });
+                const createModuleState = () => ({ dashboard: null, insumos: null, compras: null });
+                const moduleData = reactive(createModuleState());
 
                 const movForm = reactive({
                     insumo_id: '',
@@ -399,7 +402,7 @@
                     observacao: ''
                 });
 
-                const bulkModal = reactive({
+                const createBulkModalState = () => ({
                     open: false,
                     loading: false,
                     fileName: '',
@@ -409,6 +412,7 @@
                     rawRows: [],
                     previewRows: []
                 });
+                const bulkModal = reactive(createBulkModalState());
 
                 const pageContent = {
                     dashboard: 'Visão executiva com KPIs de estoque crítico e consumo médio.',
@@ -425,7 +429,21 @@
                     lucide.createIcons();
                 };
 
-                const runGAS = (method, ...args) => new Promise((resolve, reject) => {
+                const pendingQueue = [];
+                let queueRunning = false;
+
+                const logCall = (event, payload) => {
+                    console.log('[SAE:GAS]', JSON.stringify({ event, at: new Date().toISOString(), ...payload }));
+                };
+
+                const withTimeout = (promise, timeoutMs, method) => new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => reject(new Error(`Timeout ao chamar ${method} (${timeoutMs}ms)`)), timeoutMs);
+                    promise.then((value) => { clearTimeout(timer); resolve(value); }).catch((error) => { clearTimeout(timer); reject(error); });
+                });
+
+                const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+                const runGASDirect = (method, ...args) => new Promise((resolve, reject) => {
                     if (typeof google === 'undefined' || !google?.script?.run) {
                         reject(new Error('Ambiente GAS indisponível neste preview.'));
                         return;
@@ -433,6 +451,44 @@
                     google.script.run
                         .withSuccessHandler(resolve)
                         .withFailureHandler(reject)[method](...args);
+                });
+
+                const runWithRetry = async (method, args) => {
+                    let attempt = 0;
+                    while (attempt <= GAS_CLIENT_CONFIG.retries) {
+                        try {
+                            logCall('request_start', { method, attempt });
+                            const response = await withTimeout(runGASDirect(method, ...args), GAS_CLIENT_CONFIG.timeoutMs, method);
+                            logCall('request_success', { method, attempt });
+                            return response;
+                        } catch (error) {
+                            logCall('request_error', { method, attempt, error: error?.message || String(error) });
+                            if (attempt >= GAS_CLIENT_CONFIG.retries) throw error;
+                            const delay = GAS_CLIENT_CONFIG.backoffBaseMs * Math.pow(2, attempt);
+                            await sleep(delay);
+                        }
+                        attempt += 1;
+                    }
+                };
+
+                const runQueue = async () => {
+                    if (queueRunning || !pendingQueue.length) return;
+                    queueRunning = true;
+                    const next = pendingQueue.shift();
+                    try {
+                        const response = await runWithRetry(next.method, next.args);
+                        next.resolve(response);
+                    } catch (error) {
+                        next.reject(error);
+                    } finally {
+                        queueRunning = false;
+                        runQueue();
+                    }
+                };
+
+                const runGAS = (method, ...args) => new Promise((resolve, reject) => {
+                    pendingQueue.push({ method, args, resolve, reject });
+                    runQueue();
                 });
 
                 const loadDashboard = async () => {
@@ -482,6 +538,18 @@
                     }
                 };
 
+                const debounce = (fn, waitMs = 250) => {
+                    let timer = null;
+                    return (...args) => {
+                        clearTimeout(timer);
+                        timer = setTimeout(() => fn(...args), waitMs);
+                    };
+                };
+
+                const loadCurrentModuleDebounced = debounce(() => {
+                    loadCurrentModule();
+                }, 250);
+
                 const goToPage = async (page) => {
                     if (!session.value?.user?.allowed_pages?.includes(page)) {
                         errorMessage.value = `Acesso negado para a página ${page}.`;
@@ -489,7 +557,7 @@
                     }
                     errorMessage.value = '';
                     currentPage.value = page;
-                    await loadCurrentModule();
+                    loadCurrentModuleDebounced();
                 };
 
                 const handleLoginSuccess = async (response) => {
@@ -503,7 +571,7 @@
                     currentPage.value = response.user.landing_page || response.user.allowed_pages?.[0] || 'dashboard';
                     form.password = '';
                     await refreshIcons();
-                    await loadCurrentModule();
+                    loadCurrentModuleDebounced();
                 };
 
                 const handleLoginError = (error) => {
@@ -516,10 +584,9 @@
                     errorMessage.value = '';
 
                     if (typeof google !== 'undefined' && google?.script?.run) {
-                        google.script.run
-                            .withSuccessHandler(handleLoginSuccess)
-                            .withFailureHandler(handleLoginError)
-                            .doLogin({ email: form.email, password: form.password });
+                        runGAS('doLogin', { email: form.email, password: form.password })
+                            .then(handleLoginSuccess)
+                            .catch(handleLoginError);
                         return;
                     }
 
@@ -552,7 +619,7 @@
                         if (resp.success === false) throw new Error(resp.message);
                         movForm.quantidade = '';
                         movForm.observacao = '';
-                        await loadCurrentModule();
+                        loadCurrentModuleDebounced();
                     } catch (error) {
                         errorMessage.value = error.message || String(error);
                     } finally {
@@ -566,12 +633,7 @@
                 };
 
                 const closeBulkModal = () => {
-                    bulkModal.open = false;
-                    bulkModal.loading = false;
-                    bulkModal.fileName = '';
-                    bulkModal.observacao = '';
-                    bulkModal.rawRows = [];
-                    bulkModal.previewRows = [];
+                    Object.assign(bulkModal, createBulkModalState());
                 };
 
                 const parseBulkText = (text) => {
@@ -696,7 +758,7 @@
                         if (resp.success === false) throw new Error(resp.message);
 
                         closeBulkModal();
-                        await loadCurrentModule();
+                        loadCurrentModuleDebounced();
                         errorMessage.value = `Upload salvo. ID: ${resp.upload_id} | Movimentos: ${resp.total_movimentos}`;
                     } catch (error) {
                         errorMessage.value = error.message || String(error);
@@ -740,9 +802,7 @@
                     currentPage.value = 'dashboard';
                     errorMessage.value = '';
                     form.password = '';
-                    moduleData.dashboard = null;
-                    moduleData.insumos = null;
-                    moduleData.compras = null;
+                    Object.assign(moduleData, createModuleState());
                     uploadHistory.value = [];
                     closeBulkModal();
                     await refreshIcons();

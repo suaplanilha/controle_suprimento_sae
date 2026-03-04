@@ -12,8 +12,8 @@ const SAE_TABLES = {
 };
 
 const SAE_CACHE = {
-  CONFIG_KEY: 'sae_config_cache_v1',
-  CONFIG_TS_KEY: 'sae_config_cache_ts_v1',
+  CONFIG_KEY: `sae_config_cache_${SAE_CACHE_VERSION}`,
+  CONFIG_TS_KEY: `sae_config_cache_ts_${SAE_CACHE_VERSION}`,
   CONFIG_TTL_MS: 5 * 60 * 1000
 };
 
@@ -64,7 +64,7 @@ function doLogin(credentials) {
     saeLog_('INFO', 'doLogin recebido', {
       email: credentials && credentials.email ? String(credentials.email).trim().toLowerCase() : ''
     });
-    validateRequired(credentials, ['email']);
+    ValidationService.require(credentials, 'LOGIN');
 
     const usersSheet = getSheetOrThrow(SAE_TABLES.USUARIOS);
     const headers = getHeaders(usersSheet);
@@ -84,7 +84,7 @@ function doLogin(credentials) {
     }
 
     if (hasPasswordColumn) {
-      validateRequired(credentials, ['password']);
+      ValidationService.require(credentials, 'LOGIN_WITH_PASSWORD');
       const expectedPassword = String(user.senha || '');
       if (!expectedPassword || expectedPassword !== String(credentials.password)) {
         saeLog_('WARN', 'doLogin senha inválida', { email: user.email, hasPasswordColumn });
@@ -136,7 +136,7 @@ function getDashboardData(filters) {
 
 function updateStockLevel(payload) {
   return executeSafely(() => {
-    validateRequired(payload, ['insumo_id', 'tipo', 'quantidade', 'usuario_email']);
+    ValidationService.require(payload, 'MOVIMENTACAO');
     checkUserPermission(payload.usuario_email, 'movimentacoes');
 
     const tipo = String(payload.tipo).toUpperCase();
@@ -155,7 +155,7 @@ function updateStockLevel(payload) {
     }
 
     const saldoAnterior = getCurrentStockByInsumo(insumo.uuid);
-    const saldoPosterior = applyStockMutation(saldoAnterior, tipo, quantidade);
+    const saldoPosterior = StockService.applyMutation(saldoAnterior, tipo, quantidade);
 
     const obsBase = String(payload.observacao || '').trim();
     const obsAudit = `[AUDIT] saldo_anterior=${saldoAnterior}; saldo_posterior=${saldoPosterior}`;
@@ -172,6 +172,16 @@ function updateStockLevel(payload) {
     };
 
     insertRow(SAE_TABLES.MOVIMENTACOES, movimento);
+    AuditLogger.logMovimentacao({
+      insumo_id: insumo.uuid,
+      codigo_ax: insumo.codigo_ax,
+      tipo,
+      quantidade,
+      usuario_email: payload.usuario_email,
+      saldo_anterior: saldoAnterior,
+      saldo_posterior: saldoPosterior,
+      origem: 'updateStockLevel'
+    });
 
     const enriched = getInsumosDataCore({ insumo_id: insumo.uuid }).data[0];
 
@@ -187,7 +197,7 @@ function updateStockLevel(payload) {
 
 function prepareBulkMovimentacao(payload) {
   return executeSafely(() => {
-    validateRequired(payload, ['rows', 'usuario_email', 'data_iso']);
+    ValidationService.require(payload, 'BULK_MOVIMENTACAO');
     checkUserPermission(payload.usuario_email, 'movimentacoes');
 
     if (!Array.isArray(payload.rows) || !payload.rows.length) {
@@ -237,7 +247,7 @@ function prepareBulkMovimentacao(payload) {
 
 function saveBulkMovimentacao(payload) {
   return executeSafely(() => {
-    validateRequired(payload, ['rows', 'usuario_email', 'data_iso']);
+    ValidationService.require(payload, 'BULK_MOVIMENTACAO');
     checkUserPermission(payload.usuario_email, 'movimentacoes');
 
     const tipo = String(payload.tipo || 'SAIDA').toUpperCase();
@@ -261,7 +271,7 @@ function saveBulkMovimentacao(payload) {
 
       const saldoAnterior = getCurrentStockByInsumo(insumo.uuid);
       const quantidade = sanitizeNumber(row.quantidade, 'quantidade');
-      const saldoPosterior = applyStockMutation(saldoAnterior, tipo, quantidade);
+      const saldoPosterior = StockService.applyMutation(saldoAnterior, tipo, quantidade);
       const obsAudit = `[BULK:${uploadId}] saldo_anterior=${saldoAnterior}; saldo_posterior=${saldoPosterior}`;
 
       return {
@@ -971,8 +981,8 @@ function syncAbcCategories(insumos, abcMap) {
 }
 
 function computeStatus(saldo, ponto) {
-  if (saldo <= ponto * 0.5) return 'CRITICO';
-  if (saldo <= ponto) return 'ALERTA';
+  if (saldo <= ponto * ESTOQUE_STATUS.CRITICO.threshold) return 'CRITICO';
+  if (saldo <= ponto * ESTOQUE_STATUS.ALERTA.threshold) return 'ALERTA';
   return 'OK';
 }
 
@@ -1013,13 +1023,13 @@ function checkUserPermission(email, page) {
 
 function readConfigMap(options) {
   const forceRefresh = !!(options && options.forceRefresh);
-  const props = PropertiesService.getScriptProperties();
+  const cache = new CacheManager();
 
   if (!forceRefresh) {
-    const ts = Number(props.getProperty(SAE_CACHE.CONFIG_TS_KEY) || 0);
-    const payload = props.getProperty(SAE_CACHE.CONFIG_KEY);
+    const ts = cache.getNumber(SAE_CACHE.CONFIG_TS_KEY);
+    const payload = cache.getJson(SAE_CACHE.CONFIG_KEY);
     if (payload && (Date.now() - ts) < SAE_CACHE.CONFIG_TTL_MS) {
-      return JSON.parse(payload);
+      return payload;
     }
   }
 
@@ -1029,8 +1039,8 @@ function readConfigMap(options) {
     return acc;
   }, {});
 
-  props.setProperty(SAE_CACHE.CONFIG_KEY, JSON.stringify(map));
-  props.setProperty(SAE_CACHE.CONFIG_TS_KEY, String(Date.now()));
+  cache.setJson(SAE_CACHE.CONFIG_KEY, map);
+  cache.setNumber(SAE_CACHE.CONFIG_TS_KEY, Date.now());
 
   return map;
 }

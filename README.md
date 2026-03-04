@@ -192,3 +192,35 @@ Documento atualizado em: 2026-03-02
 
 - Render local automatizado: `./check_render_local.sh` (usa curl e valida tokens essenciais da página).
 - Análise de regressão do `index.html` contra baseline estável: `./analyze_index_regression.sh b8fc91f` (aponta diferenças de sintaxe/dependências potencialmente incompatíveis com o painel do GAS).
+
+## 🧩 Plano de Refatoração por Sprints (Executado)
+
+### Sprint 1 — Abstração & Segurança
+- [x] `services.gs` criado com `SheetRepository`, `QueryBuilder`, `CacheManager`, `ValidationService` e `StockService`.
+- [x] `models.gs` criado com schemas centrais (`SAE_SCHEMAS`), campos obrigatórios (`SAE_REQUIRED_FIELDS`) e thresholds de status (`ESTOQUE_STATUS`).
+- [x] Timeout/retry/fila para chamadas `google.script.run` implementados no frontend (`runGAS` com backoff exponencial).
+- [x] `AuditLogger` implementado e integrado no fluxo de movimentação unitária.
+
+### Sprint 2 — Refatoração Backend
+- [x] API Gateway inicial em `api.gs` com `doPost`, roteamento (`dispatchApiRequest_`) e resposta normalizada.
+- [x] `code.gs` atualizado para delegar validações a `ValidationService` e mutações de saldo a `StockService`.
+- [x] Cache de configuração versionado por `SAE_CACHE_VERSION` para evitar envenenamento após mudança de schema.
+- [ ] Idempotência forte para upload em lote com chave de requisição (pendente).
+- [ ] Testes unitários com mocks de GAS (pendente).
+
+### Sprint 3 — Refatoração Frontend
+- [x] Camada de comunicação única com timeout/retry/log estruturado/fila serial.
+- [x] Debounce aplicado para carregamento de módulo (`loadCurrentModuleDebounced`).
+- [x] Estado de módulo e modal extraído para factories (`createModuleState`, `createBulkModalState`) evitando vazamento entre operações.
+- [ ] Composables/módulos separados em arquivos dedicados (pendente para próxima etapa).
+
+### Sprint 4 — Integração & QA
+- [ ] E2E workflow completo (pendente).
+- [ ] Teste de performance com 10k+ linhas (pendente).
+- [ ] Staging + validação de quotas GAS (pendente).
+
+### 📌 Backlog Imediato
+- [ ] Criar issue "Refatoração de Arquitetura SAE" no repositório remoto.
+- [ ] Publicar contrato de API (request/response por endpoint) em documento dedicado.
+- [ ] Criar branch de backup `legacy/2026-03` antes de nova rodada de refactor estrutural.
+- [ ] Formalizar convenções de nomenclatura (público vs privado) em guia de contribuição.
