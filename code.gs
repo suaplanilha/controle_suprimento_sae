@@ -1,5 +1,9 @@
 /**
  * SISTEMA APOLLO ENTERPRISE (SAE) - BACKEND APLICAÇÃO DE SUPRIMENTOS
+ *
+ * ORDEM DE CARREGAMENTO: Carregue após models.gs e services.gs
+ * DEPENDE: SAE.* (de models.gs), ValidationService, StockService, AuditLogger (de services.gs)
+ * DECLARA: Funções públicas (doGet, doLogin, updateStockLevel, etc.)
  */
 
 const SAE_TABLES = {
@@ -12,8 +16,8 @@ const SAE_TABLES = {
 };
 
 const SAE_CACHE = {
-  CONFIG_KEY: `sae_config_cache_${SAE_CACHE_VERSION}`,
-  CONFIG_TS_KEY: `sae_config_cache_ts_${SAE_CACHE_VERSION}`,
+  CONFIG_KEY: `sae_config_cache_${SAE.CACHE_VERSION}`,
+  CONFIG_TS_KEY: `sae_config_cache_ts_${SAE.CACHE_VERSION}`,
   CONFIG_TTL_MS: 5 * 60 * 1000
 };
 
@@ -981,8 +985,8 @@ function syncAbcCategories(insumos, abcMap) {
 }
 
 function computeStatus(saldo, ponto) {
-  if (saldo <= ponto * ESTOQUE_STATUS.CRITICO.threshold) return 'CRITICO';
-  if (saldo <= ponto * ESTOQUE_STATUS.ALERTA.threshold) return 'ALERTA';
+  if (saldo <= ponto * SAE.ESTOQUE_STATUS.CRITICO.threshold) return 'CRITICO';
+  if (saldo <= ponto * SAE.ESTOQUE_STATUS.ALERTA.threshold) return 'ALERTA';
   return 'OK';
 }
 

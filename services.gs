@@ -1,5 +1,10 @@
 /**
  * Service layer e abstrações de dados (Sprint 1)
+ *
+ * ORDEM DE CARREGAMENTO: Carregue após models.gs
+ * DEPENDE: SAE.REQUIRED_FIELDS (de models.gs)
+ * DECLARA: SheetRepository, QueryBuilder, CacheManager, ValidationService, AuditLogger, StockService
+ * USADO POR: code.gs
  */
 
 class SheetRepository {
@@ -89,7 +94,7 @@ class QueryBuilder {
 
 const ValidationService = {
   require(payload, key) {
-    const required = SAE_REQUIRED_FIELDS[key] || [];
+    const required = SAE.REQUIRED_FIELDS[key] || [];
     validateRequired(payload, required);
   }
 };

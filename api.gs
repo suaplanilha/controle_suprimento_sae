@@ -1,5 +1,9 @@
 /**
  * API Gateway (Sprint 2)
+ *
+ * ORDEM DE CARREGAMENTO: Carregue após models.gs e services.gs
+ * DEPENDE: funções globais de code.gs e namespace SAE (models.gs)
+ * DECLARA: doPost, dispatchApiRequest_, parseApiPayload_, normalizeApiResponse_
  */
 
 function doPost(e) {

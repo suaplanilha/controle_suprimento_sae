@@ -204,7 +204,7 @@ Documento atualizado em: 2026-03-02
 ### Sprint 2 — Refatoração Backend
 - [x] API Gateway inicial em `api.gs` com `doPost`, roteamento (`dispatchApiRequest_`) e resposta normalizada.
 - [x] `code.gs` atualizado para delegar validações a `ValidationService` e mutações de saldo a `StockService`.
-- [x] Cache de configuração versionado por `SAE_CACHE_VERSION` para evitar envenenamento após mudança de schema.
+- [x] Cache de configuração versionado por `SAE.CACHE_VERSION` para evitar envenenamento após mudança de schema.
 - [ ] Idempotência forte para upload em lote com chave de requisição (pendente).
 - [ ] Testes unitários com mocks de GAS (pendente).
 
@@ -224,3 +224,45 @@ Documento atualizado em: 2026-03-02
 - [ ] Publicar contrato de API (request/response por endpoint) em documento dedicado.
 - [ ] Criar branch de backup `legacy/2026-03` antes de nova rodada de refactor estrutural.
 - [ ] Formalizar convenções de nomenclatura (público vs privado) em guia de contribuição.
+
+## 🏗️ Arquitetura de Namespace Global (SAE v2)
+
+### Padrão de Constantes
+Todas as constantes centralizadas estão no **namespace global `SAE`** definido em `models.gs`:
+
+```javascript
+SAE.CACHE_VERSION              // Versão do cache (incrementar se schema mudar)
+SAE.ESTOQUE_STATUS.CRITICO     // Thresholds de estoque (threshold: 0.5)
+SAE.ESTOQUE_STATUS.ALERTA      // Thresholds de estoque (threshold: 1.0)
+SAE.REQUIRED_FIELDS.LOGIN      // Campos obrigatórios para login
+SAE.SCHEMAS.INSUMO             // Schema de validação
+SAE.UI_TOKENS.COLORS           // Design tokens
+```
+
+### Ordem de Carregamento (Editor GAS)
+Arquivo `.gs` deve ser carregado nesta ordem para evitar `ReferenceError`:
+
+1. `models.gs` — Declara `var SAE = { ... }`
+2. `services.gs` — Classes e serviços que usam `SAE.*`
+3. `api.gs` — API gateway (se existir)
+4. `code.gs` — Core logic (usa `SAE.*` e serviços)
+5. Resto dos arquivos
+
+### Debugging no Console GAS
+Para testar se namespace está acessível:
+
+```javascript
+SAE
+SAE.CACHE_VERSION
+SAE.ESTOQUE_STATUS
+```
+
+Se receber `ReferenceError: SAE is not defined`, verifique:
+- `models.gs` está no topo da lista de arquivos;
+- não há erros de compilação em `models.gs`;
+- todos os arquivos foram salvos.
+
+### Adicionando Novas Constantes
+1. Adicione em `models.gs` dentro de `SAE = { ... }` ou `SAE.<chave> = ...`.
+2. Referencie como `SAE.MINHA_CONSTANTE` nos demais arquivos.
+3. Atualize comentários de dependência no topo do arquivo consumidor.
