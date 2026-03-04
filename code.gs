@@ -1199,6 +1199,19 @@ function sanitizeMovementRow(row) {
   };
 }
 
+
+function generateUUID() {
+  if (typeof Utilities !== 'undefined' && Utilities.getUuid) {
+    return Utilities.getUuid();
+  }
+
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.floor(Math.random() * 16);
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function sanitizeCodigoAX(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
