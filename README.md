@@ -251,9 +251,10 @@ Arquivo `.gs` deve ser carregado nesta ordem para evitar `ReferenceError`:
 7. `fornecedores-service.gs` — Operações de fornecedores e opções
 8. `analytics-service.gs` — Cálculos/KPIs e planejamento
 9. `setup-admin.gs` — Setup, admin e test harness
-10. `api.gs` — API gateway (se existir)
-11. `code.gs` — Fachada/core remanescente e funções transversais
-12. Resto dos arquivos
+10. `facade-support.gs` — Helpers compartilhados da fachada (delegação/validação/paginação/permissão)
+11. `api.gs` — API gateway (se existir)
+12. `code.gs` — Fachada final: constantes globais + entradas públicas
+13. Resto dos arquivos
 
 ### Debugging no Console GAS
 Para testar se namespace está acessível:

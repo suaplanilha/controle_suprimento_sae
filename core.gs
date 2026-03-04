@@ -5,8 +5,6 @@
  * DECLARA: logging, execução segura e utilitários compartilhados
  */
 
-const SAE_LOG_PREFIX = '[SAE]';
-
 function generateUUID() {
   if (typeof Utilities !== 'undefined' && Utilities.getUuid) {
     return Utilities.getUuid();
@@ -89,7 +87,8 @@ function executeSafely(fn, contextName) {
 
 function saeLog_(level, message, data) {
   const payload = data ? ` | ${safeStringify_(data)}` : '';
-  console.log(`${SAE_LOG_PREFIX} [${level}] ${message}${payload}`);
+  const prefix = (typeof SAE_LOG_PREFIX !== 'undefined') ? SAE_LOG_PREFIX : '[SAE]';
+  console.log(`${prefix} [${level}] ${message}${payload}`);
 }
 
 function safeStringify_(value) {
