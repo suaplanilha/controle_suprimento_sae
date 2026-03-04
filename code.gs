@@ -65,11 +65,15 @@ function renderWebApp_(e) {
 
 function doLogin(credentials) {
   return executeSafely(() => {
+    // 1. Log inicial e normalização do e-mail
     saeLog_('INFO', 'doLogin recebido', {
       email: credentials && credentials.email ? String(credentials.email).trim().toLowerCase() : ''
     });
+
+    // 2. Validação básica de entrada
     ValidationService.require(credentials, 'LOGIN');
 
+    // 3. Acesso à tabela de usuários
     const usersSheet = getSheetOrThrow(SAE_TABLES.USUARIOS);
     const headers = getHeaders(usersSheet);
     const hasPasswordColumn = headers.includes('senha');
@@ -77,25 +81,37 @@ function doLogin(credentials) {
     const users = readTable(SAE_TABLES.USUARIOS);
     const user = users.find(row => String(row.email).toLowerCase() === String(credentials.email).toLowerCase());
 
+    // 4. Verificação de existência do usuário
     if (!user) {
       saeLog_('WARN', 'doLogin usuário não encontrado', { email: credentials.email });
       throw new Error('Usuário não encontrado.');
     }
 
+    // 5. Verificação de status (Bloqueia inativos)
     if (String(user.status).toUpperCase() !== 'ATIVO') {
       saeLog_('WARN', 'doLogin usuário inativo', { email: user.email, status: user.status });
       throw new Error('Usuário inativo. Contate o administrador.');
     }
 
+    // 6. Verificação de Senha com Hash SHA-256
     if (hasPasswordColumn) {
       ValidationService.require(credentials, 'LOGIN_WITH_PASSWORD');
-      const expectedPassword = String(user.senha || '');
-      if (!expectedPassword || expectedPassword !== String(credentials.password)) {
+
+      // Transforma a senha digitada (texto puro) em Hash para comparação
+      const inputPasswordRaw = String(credentials.password || '');
+      const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, inputPasswordRaw);
+      const inputPasswordHash = Utilities.base64Encode(digest);
+
+      const expectedPasswordHash = String(user.senha || '');
+
+      // Comparação de segurança: Hash vs Hash
+      if (!expectedPasswordHash || expectedPasswordHash !== inputPasswordHash) {
         saeLog_('WARN', 'doLogin senha inválida', { email: user.email, hasPasswordColumn });
         throw new Error('Senha inválida.');
       }
     }
 
+    // 7. Atualização de metadados e resposta de sucesso
     updateUserLastLogin(user.uuid);
 
     const allowedPages = parseAllowedPages(user.paginas_acesso);
