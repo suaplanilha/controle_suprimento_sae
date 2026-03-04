@@ -272,3 +272,107 @@ Se receber `ReferenceError: SAE is not defined`, verifique:
 - [x] Implementado `IdempotencyService` com ciclo `PROCESSANDO` → `SUCESSO`/`FALHA`.
 - [x] `saveBulkMovimentacao` atualizado com `request_id` obrigatório, cache de requisição duplicada e marcação de sucesso/falha.
 - [x] Frontend passou a enviar `request_id` UUID único por operação de salvar lote.
+
+## 🧭 Plano de Modularização do `code.gs` (execução por PR)
+
+> Objetivo: reduzir risco de regressão no GAS modularizando por etapas, sem quebra de contratos atuais (`frontend`, `api.gs`, `Sheets`).
+
+### Princípios de execução
+- Não renomear funções públicas já consumidas pelo frontend durante migração.
+- Manter formato de retorno de `executeSafely` e paginação (`paginateRows`).
+- Migrar por blocos coesos e pequenos, validando sintaxe e smoke a cada PR.
+- Só refatorar comportamento após concluir extração estrutural.
+
+### PR1 — Core Infra
+**Escopo**
+- Extrair para `core.gs`:
+  - `executeSafely`, `saeLog_`, `safeStringify_`, `sanitizeForLog_`, `summarizeResultShape_`, `resolveExecutionContext_`.
+  - utilitários puros: `generateUUID`, `sanitizeCodigoAX`, `sanitizeNumber`, `toIsoString`, `normalizeHeader`.
+
+**Risco**: baixo (funções transversais).
+
+**Critérios de aceite**
+- `node --check` em todos `.gs`.
+- Fluxo de login e carregamento inicial sem regressão.
+
+### PR2 — Data Access / Repositório
+**Escopo**
+- Extrair para `repositories.gs`:
+  - `readTable`, `insertRow`, `batchInsertRows`, `findById`, `findRowIndexByUuid`, `updateRowByHeaderMap`, `getSheetOrThrow`, `getHeaders`.
+
+**Risco**: médio (impacta toda persistência).
+
+**Critérios de aceite**
+- CRUD de insumos/fornecedores funcionando.
+- Upload e movimentação manual persistindo corretamente.
+
+### PR3 — Movimentações Service
+**Escopo**
+- Extrair para `movimentacoes-service.gs`:
+  - `updateStockLevel`, `prepareBulkMovimentacao`, `saveBulkMovimentacao`, `getUploadHistory`, `listMovimentacoes`.
+  - helpers correlatos: `resolveInsumoForMovimentacao_`, `getCurrentStockByInsumo`, `applyStockMutation`, `sanitizeMovementRow`.
+
+**Risco**: médio-alto (módulo crítico de operação).
+
+**Critérios de aceite**
+- Sem duplicidade de gravação.
+- Idempotência de bulk preservada.
+- Tabela de movimentações paginada íntegra.
+
+### PR4 — Catálogo (Insumos/Fornecedores)
+**Escopo**
+- Extrair para `insumos-service.gs` e `fornecedores-service.gs`:
+  - `listInsumos`, `saveInsumo`, `inactivateInsumo`.
+  - `listFornecedores`, `saveFornecedor`, `inactivateFornecedor`, `getFornecedorOptions`.
+  - `importCSVData`, `seedFornecedoresFromInsumos`.
+
+**Risco**: médio.
+
+**Critérios de aceite**
+- Listagens paginadas e filtros mantendo comportamento atual.
+- Importação CSV sem regressão.
+
+### PR5 — Analytics / Planejamento
+**Escopo**
+- Extrair para `analytics-service.gs`:
+  - `getInsumosDataCore`, `enrichInsumo`, `calculateOrderPoint`, `calculateMonthlyConsumption`, `computeAbcCategoryMap`, `syncAbcCategories`, `computeStatus`, `applyInsumoFilters`, `getExecutiveSummary`.
+
+**Risco**: médio-alto (cálculos e indicadores).
+
+**Critérios de aceite**
+- `test_runAllCalculations` passando.
+- KPIs de dashboard equivalentes ao baseline.
+
+### PR6 — Setup/Admin/Test Harness
+**Escopo**
+- Extrair para `setup-admin.gs`:
+  - `sae_setupDatabase`, `runWeeklyBackupSnapshot`, `test_runAllCalculations`, `include`.
+
+**Risco**: baixo-médio.
+
+**Critérios de aceite**
+- Setup cria abas esperadas (incluindo idempotência).
+- Snapshot e teste interno executam sem erro.
+
+### PR7 — Slim `code.gs` (fachada)
+**Escopo**
+- Manter em `code.gs` apenas:
+  - constantes globais (`SAE_TABLES`, `SAE_CACHE`, `SAE_LOG_PREFIX`);
+  - funções públicas de entrada e delegação.
+- Remover duplicações restantes e organizar ordem lógica de leitura.
+
+**Risco**: baixo.
+
+**Critérios de aceite**
+- Assinaturas públicas inalteradas.
+- Frontend e `api.gs` consumindo os mesmos contratos.
+
+### Checklist de validação por PR
+- Sintaxe: `node --check` do backend concatenado + script do `index.html`.
+- Smoke manual:
+  - login;
+  - lançamento manual;
+  - upload em lote + idempotência;
+  - tabela de movimentações paginada;
+  - dashboard e compras.
+- Sem mudança de schema de planilha (exceto PR6 quando explicitamente necessário).
