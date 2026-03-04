@@ -266,3 +266,9 @@ Se receber `ReferenceError: SAE is not defined`, verifique:
 1. Adicione em `models.gs` dentro de `SAE = { ... }` ou `SAE.<chave> = ...`.
 2. Referencie como `SAE.MINHA_CONSTANTE` nos demais arquivos.
 3. Atualize comentários de dependência no topo do arquivo consumidor.
+
+### Sprint 2.2 — Idempotência em Uploads em Lote
+- [x] Criada infraestrutura de setup para aba `log_requisicoes_idempotencia` em `sae_setupDatabase()`.
+- [x] Implementado `IdempotencyService` com ciclo `PROCESSANDO` → `SUCESSO`/`FALHA`.
+- [x] `saveBulkMovimentacao` atualizado com `request_id` obrigatório, cache de requisição duplicada e marcação de sucesso/falha.
+- [x] Frontend passou a enviar `request_id` UUID único por operação de salvar lote.

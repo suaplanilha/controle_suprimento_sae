@@ -128,6 +128,116 @@ class CacheManager {
   }
 }
 
+/**
+ * IdempotencyService — Controle de requisições duplicadas
+ * Previne processamento duplicado de uploads em lote
+ *
+ * ORDEM DE CARREGAMENTO: Após models.gs, services.gs
+ * DEPENDE: readTable, insertRow, updateRowByHeaderMap, findRowIndexByUuid, getSheetOrThrow, getHeaders, generateUUID, saeLog_
+ * USADO POR: code.gs (função saveBulkMovimentacao)
+ */
+class IdempotencyService {
+  static checkIfProcessed(requestId) {
+    const rows = readTable(SAE_TABLES.IDEMPOTENCY);
+    const existing = rows.find(r => String(r.request_id || '') === String(requestId));
+
+    if (!existing) return null;
+
+    if (existing.status === 'PROCESSANDO') {
+      throw new Error('Requisição já em processamento. Aguarde alguns segundos e tente novamente.');
+    }
+
+    if (existing.status === 'SUCESSO') {
+      saeLog_('INFO', 'IdempotencyService.checkIfProcessed: Cache hit', {
+        requestId,
+        timestamp: existing.timestamp_processado
+      });
+      return JSON.parse(existing.resultado_json || '{}');
+    }
+
+    if (existing.status === 'FALHA') {
+      throw new Error(`Erro anterior registrado: ${existing.observacao || 'falha sem detalhes'}`);
+    }
+
+    return null;
+  }
+
+  static markAsProcessing(requestId, endpoint, usuarioEmail, payloadHash) {
+    insertRow(SAE_TABLES.IDEMPOTENCY, {
+      uuid: generateUUID(),
+      request_id: requestId,
+      endpoint,
+      status: 'PROCESSANDO',
+      resultado_json: '{}',
+      payload_hash: String(payloadHash || ''),
+      usuario_email: String(usuarioEmail || '').trim(),
+      timestamp_processado: new Date().toISOString(),
+      observacao: 'Em processamento...'
+    });
+
+    saeLog_('DEBUG', 'IdempotencyService.markAsProcessing: Requisição marcada', {
+      requestId,
+      endpoint
+    });
+  }
+
+  static markAsSuccess(requestId, endpoint, resultado, usuarioEmail) {
+    const rows = readTable(SAE_TABLES.IDEMPOTENCY);
+    const sheet = getSheetOrThrow(SAE_TABLES.IDEMPOTENCY);
+    const headers = getHeaders(sheet);
+
+    const existing = rows.find(r => String(r.request_id || '') === String(requestId));
+    if (!existing) {
+      saeLog_('WARN', 'IdempotencyService.markAsSuccess: Registro não encontrado', { requestId });
+      return;
+    }
+
+    const rowIndex = findRowIndexByUuid(sheet, existing.uuid);
+    if (rowIndex < 2) return;
+
+    updateRowByHeaderMap(sheet, headers, rowIndex, {
+      status: 'SUCESSO',
+      resultado_json: JSON.stringify(resultado),
+      timestamp_processado: new Date().toISOString(),
+      observacao: 'Processado com sucesso'
+    });
+
+    saeLog_('INFO', 'IdempotencyService.markAsSuccess: Requisição finalizada', {
+      requestId,
+      endpoint,
+      usuarioEmail
+    });
+  }
+
+  static markAsFailure(requestId, endpoint, errorMessage, usuarioEmail) {
+    const rows = readTable(SAE_TABLES.IDEMPOTENCY);
+    const sheet = getSheetOrThrow(SAE_TABLES.IDEMPOTENCY);
+    const headers = getHeaders(sheet);
+
+    const existing = rows.find(r => String(r.request_id || '') === String(requestId));
+    if (!existing) {
+      saeLog_('WARN', 'IdempotencyService.markAsFailure: Registro não encontrado', { requestId });
+      return;
+    }
+
+    const rowIndex = findRowIndexByUuid(sheet, existing.uuid);
+    if (rowIndex < 2) return;
+
+    updateRowByHeaderMap(sheet, headers, rowIndex, {
+      status: 'FALHA',
+      timestamp_processado: new Date().toISOString(),
+      observacao: String(errorMessage || 'Erro desconhecido').substring(0, 255)
+    });
+
+    saeLog_('WARN', 'IdempotencyService.markAsFailure: Requisição marcada como falha', {
+      requestId,
+      endpoint,
+      error: errorMessage,
+      usuarioEmail
+    });
+  }
+}
+
 class AuditLogger {
   static logMovimentacao(entry) {
     const payload = {

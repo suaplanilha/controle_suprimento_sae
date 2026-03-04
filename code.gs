@@ -12,7 +12,8 @@ const SAE_TABLES = {
   FORNECEDORES: 'cad_fornecedores',
   USUARIOS: 'sys_usuarios',
   CONFIG: 'config_parametros',
-  UPLOAD_HISTORY: 'log_upload_mov'
+  UPLOAD_HISTORY: 'log_upload_mov',
+  IDEMPOTENCY: 'log_requisicoes_idempotencia'
 };
 
 const SAE_CACHE = {
@@ -270,68 +271,97 @@ function saveBulkMovimentacao(payload) {
     ValidationService.require(payload, 'BULK_MOVIMENTACAO');
     checkUserPermission(payload.usuario_email, 'movimentacoes');
 
-    const tipo = String(payload.tipo || 'SAIDA').toUpperCase();
-    if (!['ENTRADA', 'SAIDA', 'AJUSTE'].includes(tipo)) {
-      throw new Error('Tipo inválido para lote.');
+    // ===== VERIFICAÇÃO DE IDEMPOTÊNCIA =====
+    const requestId = String(payload.request_id || '').trim();
+    if (!requestId) {
+      throw new Error('request_id obrigatório para garantir idempotência. Frontend deve gerar UUID.');
     }
 
-    const dataIso = toIsoString(payload.data_iso);
-    const uploadId = generateUUID();
-
-    const validRows = (payload.rows || []).filter(row => row.valid && row.insumo_id && sanitizeNumber(row.quantidade) > 0);
-    if (!validRows.length) {
-      throw new Error('Nenhuma linha válida para salvar.');
+    const cached = IdempotencyService.checkIfProcessed(requestId);
+    if (cached) {
+      saeLog_('WARN', 'saveBulkMovimentacao: Requisição duplicada detectada', {
+        requestId,
+        usuarioEmail: payload.usuario_email
+      });
+      return cached;
     }
 
-    const movimentos = validRows.map(row => {
-      const insumo = findById(SAE_TABLES.INSUMOS, row.insumo_id);
-      if (!insumo) {
-        return null;
+    const payloadHash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(payload.rows || [])));
+    IdempotencyService.markAsProcessing(requestId, 'saveBulkMovimentacao', payload.usuario_email, payloadHash);
+    // ===== FIM VERIFICAÇÃO DE IDEMPOTÊNCIA =====
+
+    try {
+      const tipo = String(payload.tipo || 'SAIDA').toUpperCase();
+      if (!['ENTRADA', 'SAIDA', 'AJUSTE'].includes(tipo)) {
+        throw new Error('Tipo inválido para lote.');
       }
 
-      const saldoAnterior = getCurrentStockByInsumo(insumo.uuid);
-      const quantidade = sanitizeNumber(row.quantidade, 'quantidade');
-      const saldoPosterior = StockService.applyMutation(saldoAnterior, tipo, quantidade);
-      const obsAudit = `[BULK:${uploadId}] saldo_anterior=${saldoAnterior}; saldo_posterior=${saldoPosterior}`;
+      const dataIso = toIsoString(payload.data_iso);
+      const uploadId = generateUUID();
 
-      return {
+      const validRows = (payload.rows || []).filter(row => row.valid && row.insumo_id && sanitizeNumber(row.quantidade) > 0);
+      if (!validRows.length) {
+        throw new Error('Nenhuma linha válida para salvar.');
+      }
+
+      const movimentos = validRows.map(row => {
+        const insumo = findById(SAE_TABLES.INSUMOS, row.insumo_id);
+        if (!insumo) {
+          return null;
+        }
+
+        const saldoAnterior = getCurrentStockByInsumo(insumo.uuid);
+        const quantidade = sanitizeNumber(row.quantidade, 'quantidade');
+        const saldoPosterior = StockService.applyMutation(saldoAnterior, tipo, quantidade);
+        const obsAudit = `[BULK:${uploadId}] saldo_anterior=${saldoAnterior}; saldo_posterior=${saldoPosterior}`;
+
+        return {
+          uuid: generateUUID(),
+          data_iso: dataIso,
+          insumo_id: insumo.uuid,
+          codigo_ax: sanitizeCodigoAX(insumo.codigo_ax),
+          tipo,
+          quantidade,
+          usuario_email: String(payload.usuario_email).trim(),
+          observacao: payload.observacao ? `${payload.observacao} | ${obsAudit}` : obsAudit
+        };
+      }).filter(Boolean);
+
+      batchInsertRows(SAE_TABLES.MOVIMENTACOES, movimentos);
+
+      insertRow(SAE_TABLES.UPLOAD_HISTORY, {
         uuid: generateUUID(),
+        upload_id: uploadId,
         data_iso: dataIso,
-        insumo_id: insumo.uuid,
-        codigo_ax: sanitizeCodigoAX(insumo.codigo_ax),
         tipo,
-        quantidade,
+        arquivo_nome: String(payload.file_name || ''),
         usuario_email: String(payload.usuario_email).trim(),
-        observacao: payload.observacao ? `${payload.observacao} | ${obsAudit}` : obsAudit
+        total_linhas: payload.rows.length,
+        total_validas: movimentos.length,
+        total_invalidas: payload.rows.length - movimentos.length,
+        detalhes_json: JSON.stringify({
+          request_id: requestId,
+          sample: payload.rows.slice(0, 10),
+          observacao: payload.observacao || ''
+        }),
+        criado_em: new Date().toISOString()
+      });
+
+      const resultado = {
+        success: true,
+        message: 'Upload em massa salvo com sucesso.',
+        upload_id: uploadId,
+        total_movimentos: movimentos.length,
+        request_id: requestId
       };
-    }).filter(Boolean);
 
-    batchInsertRows(SAE_TABLES.MOVIMENTACOES, movimentos);
-
-    insertRow(SAE_TABLES.UPLOAD_HISTORY, {
-      uuid: generateUUID(),
-      upload_id: uploadId,
-      data_iso: dataIso,
-      tipo,
-      arquivo_nome: String(payload.file_name || ''),
-      usuario_email: String(payload.usuario_email).trim(),
-      total_linhas: payload.rows.length,
-      total_validas: movimentos.length,
-      total_invalidas: payload.rows.length - movimentos.length,
-      detalhes_json: JSON.stringify({
-        sample: payload.rows.slice(0, 10),
-        observacao: payload.observacao || ''
-      }),
-      criado_em: new Date().toISOString()
-    });
-
-    return {
-      success: true,
-      message: 'Upload em massa salvo com sucesso.',
-      upload_id: uploadId,
-      total_movimentos: movimentos.length
-    };
-  });
+      IdempotencyService.markAsSuccess(requestId, 'saveBulkMovimentacao', resultado, payload.usuario_email);
+      return resultado;
+    } catch (innerError) {
+      IdempotencyService.markAsFailure(requestId, 'saveBulkMovimentacao', innerError.message, payload.usuario_email);
+      throw innerError;
+    }
+  }, 'saveBulkMovimentacao');
 }
 
 function getUploadHistory(limit) {
@@ -1197,6 +1227,8 @@ function executeSafely(fn, contextName) {
     return result;
   } catch (error) {
     const elapsedMs = new Date().getTime() - start;
+    // Nota: idempotência de falha é tratada no escopo da função de negócio
+    // (ex.: saveBulkMovimentacao chama IdempotencyService.markAsFailure no catch interno).
     saeLog_('ERROR', `executeSafely falha: ${context}`, {
       elapsedMs,
       error: error && error.stack ? String(error.stack) : (error && error.message ? error.message : String(error))
@@ -1256,6 +1288,55 @@ function resolveExecutionContext_() {
     // noop
   }
   return 'unknown_context';
+}
+
+
+function sae_setupDatabase() {
+  return executeSafely(() => {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    const ensureSheet = (name, headers) => {
+      let sheet = ss.getSheetByName(name);
+      if (!sheet) {
+        sheet = ss.insertSheet(name);
+      }
+      const hasHeader = sheet.getLastRow() >= 1;
+      if (!hasHeader) {
+        sheet.appendRow(headers);
+        sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+      }
+      return sheet;
+    };
+
+    ensureSheet(SAE_TABLES.INSUMOS, ['uuid', 'codigo_ax', 'descricao', 'unidade', 'fornecedor_id', 'lead_time', 'estoque_minimo', 'consenso_dias', 'categoria', 'ativo', 'criado_em']);
+    ensureSheet(SAE_TABLES.MOVIMENTACOES, ['uuid', 'data_iso', 'insumo_id', 'codigo_ax', 'tipo', 'quantidade', 'usuario_email', 'observacao']);
+    ensureSheet(SAE_TABLES.FORNECEDORES, ['uuid', 'nome_fantasia', 'razao_social', 'cnpj', 'contato', 'telefone', 'email', 'ativo', 'criado_em']);
+    ensureSheet(SAE_TABLES.USUARIOS, ['uuid', 'nome', 'email', 'senha', 'permissao', 'paginas_acesso', 'status', 'ultimo_login']);
+    ensureSheet(SAE_TABLES.CONFIG, ['parametro', 'valor', 'descricao']);
+    ensureSheet(SAE_TABLES.UPLOAD_HISTORY, ['uuid', 'upload_id', 'data_iso', 'tipo', 'arquivo_nome', 'usuario_email', 'total_linhas', 'total_validas', 'total_invalidas', 'detalhes_json', 'criado_em']);
+
+    if (!ss.getSheetByName(SAE_TABLES.IDEMPOTENCY)) {
+      const sheetIdempotencia = ss.insertSheet(SAE_TABLES.IDEMPOTENCY);
+      sheetIdempotencia.appendRow([
+        'uuid',
+        'request_id',
+        'endpoint',
+        'status',
+        'resultado_json',
+        'payload_hash',
+        'usuario_email',
+        'timestamp_processado',
+        'observacao'
+      ]);
+      sheetIdempotencia.getRange(1, 1, 1, 9).setFontWeight('bold');
+      saeLog_('INFO', 'sae_setupDatabase: Aba log_requisicoes_idempotencia criada', {});
+    }
+
+    return {
+      success: true,
+      message: 'Database setup completo.'
+    };
+  }, 'sae_setupDatabase');
 }
 
 function getSheetOrThrow(name) {
