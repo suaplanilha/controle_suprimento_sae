@@ -432,6 +432,7 @@
                 const form = reactive({ email: '', password: '' });
                 const insumosQuery = ref('');
                 const uploadHistory = ref([]);
+                const insumosLookupCache = reactive({ loaded: false, loading: false, loadedAt: 0, byCodigo: {} });
 
                 const createModuleState = () => ({ dashboard: null, insumos: null, compras: null });
                 const moduleData = reactive(createModuleState());
@@ -568,6 +569,45 @@
                     uploadHistory.value = resp.data || [];
                 };
 
+                const normalizeAx = (value) => String(value || '').trim();
+
+                const ensureInsumosLookupCache = async (forceRefresh = false) => {
+                    const ttlMs = 5 * 60 * 1000;
+                    const fresh = insumosLookupCache.loaded && (Date.now() - insumosLookupCache.loadedAt) < ttlMs;
+                    if (!forceRefresh && fresh) return;
+                    if (insumosLookupCache.loading) return;
+
+                    insumosLookupCache.loading = true;
+                    try {
+                        const resp = await runGAS('getInsumosData', {});
+                        if (resp.success === false) throw new Error(resp.message);
+
+                        const data = Array.isArray(resp.data) ? resp.data : [];
+                        const map = {};
+                        data.forEach(item => {
+                            const ax = normalizeAx(item.codigo_ax);
+                            if (!ax) return;
+                            map[ax] = {
+                                codigo_ax: ax,
+                                descricao: String(item.descricao || ''),
+                                uuid: String(item.uuid || '')
+                            };
+                        });
+
+                        insumosLookupCache.byCodigo = map;
+                        insumosLookupCache.loaded = true;
+                        insumosLookupCache.loadedAt = Date.now();
+                    } finally {
+                        insumosLookupCache.loading = false;
+                    }
+                };
+
+                const getInsumoByCodigoFromCache = (codigoAx) => {
+                    const ax = normalizeAx(codigoAx);
+                    if (!ax) return null;
+                    return insumosLookupCache.byCodigo[ax] || null;
+                };
+
                 const loadCurrentModule = async () => {
                     try {
                         errorMessage.value = '';
@@ -577,7 +617,10 @@
                         if (currentPage.value === 'dashboard') await loadDashboard();
                         if (currentPage.value === 'insumos') await loadInsumos();
                         if (currentPage.value === 'compras') await loadCompras();
-                        if (currentPage.value === 'movimentacoes') await loadUploadHistory();
+                        if (currentPage.value === 'movimentacoes') {
+                            await loadUploadHistory();
+                            await ensureInsumosLookupCache();
+                        }
                     } catch (error) {
                         moduleLoading.value = false;
                         errorMessage.value = error.message || String(error);
@@ -617,6 +660,7 @@
                     currentPage.value = response.user.landing_page || response.user.allowed_pages?.[0] || 'dashboard';
                     form.password = '';
                     await refreshIcons();
+                    ensureInsumosLookupCache().catch(() => {});
                     loadCurrentModuleDebounced();
                 };
 
@@ -685,6 +729,7 @@
 
                 const openManualModal = () => {
                     manualModal.open = true;
+                    ensureInsumosLookupCache().catch(() => {});
                 };
 
                 const closeManualModal = () => {
@@ -694,16 +739,34 @@
 
                 const resolveManualInsumo = async () => {
                     try {
-                        const codigo = String(movForm.codigo_ax || '').trim();
+                        const codigo = normalizeAx(movForm.codigo_ax);
                         movForm.descricao = '';
                         if (!codigo) return;
-                        const resp = await runGAS('getInsumosData', { query: codigo });
-                        if (resp.success === false) throw new Error(resp.message);
-                        const data = Array.isArray(resp.data) ? resp.data : [];
-                        const found = data.find(item => String(item.codigo_ax || '') === codigo);
+
+                        let found = getInsumoByCodigoFromCache(codigo);
+                        if (!found) {
+                            await ensureInsumosLookupCache();
+                            found = getInsumoByCodigoFromCache(codigo);
+                        }
+
+                        if (!found) {
+                            const resp = await runGAS('getInsumosData', { query: codigo });
+                            if (resp.success === false) throw new Error(resp.message);
+                            const data = Array.isArray(resp.data) ? resp.data : [];
+                            const exact = data.find(item => normalizeAx(item.codigo_ax) === codigo);
+                            if (exact) {
+                                found = {
+                                    codigo_ax: normalizeAx(exact.codigo_ax),
+                                    descricao: String(exact.descricao || ''),
+                                    uuid: String(exact.uuid || '')
+                                };
+                                insumosLookupCache.byCodigo[found.codigo_ax] = found;
+                            }
+                        }
+
                         if (found) {
                             movForm.codigo_ax = found.codigo_ax;
-                            movForm.descricao = found.descricao || '';
+                            movForm.descricao = found.descricao;
                         }
                     } catch (error) {
                         errorMessage.value = error.message || String(error);
@@ -937,6 +1000,9 @@
                     form.password = '';
                     Object.assign(moduleData, createModuleState());
                     uploadHistory.value = [];
+                    insumosLookupCache.loaded = false;
+                    insumosLookupCache.loadedAt = 0;
+                    insumosLookupCache.byCodigo = {};
                     closeBulkModal();
                     closeManualModal();
                     await refreshIcons();
