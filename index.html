@@ -322,6 +322,7 @@
                                     </div>
 
                                     <p class="text-xs text-slate-400">Formato esperado: A|B = codigo_ax|quantidade. Pode conter header ou linhas diretas.</p>
+                                    <p v-if="bulkModal.fileName" class="text-xs text-sky-300">Arquivo selecionado: {{ bulkModal.fileName }}</p>
 
                                     <div v-if="bulkModal.previewRows.length" class="space-y-3">
                                         <div class="text-sm text-slate-300">Válidas: {{ bulkModal.previewRows.filter(r => r.valid).length }} | Inválidas: {{ bulkModal.previewRows.filter(r => !r.valid).length }}</div>
@@ -346,6 +347,29 @@
                                                 <button @click="saveBulkUpload" :disabled="bulkModal.loading" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">Salvar Lote</button>
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                            <div v-if="processModal.open" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                                <div class="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full border-2 border-sky-400 border-t-transparent animate-spin"></div>
+                                        <div>
+                                            <h4 class="text-lg font-semibold">{{ processModal.title }}</h4>
+                                            <p class="text-sm text-slate-300">{{ processModal.message }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-slate-400 bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                        Não feche esta tela. O sistema está garantindo idempotência e consistência do estoque.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="successModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                                <div class="w-full max-w-md bg-slate-900 border border-emerald-600/50 rounded-2xl p-6 space-y-4">
+                                    <h4 class="text-lg font-semibold text-emerald-300">{{ successModal.title }}</h4>
+                                    <p class="text-sm text-slate-200">{{ successModal.message }}</p>
+                                    <div class="flex justify-end">
+                                        <button @click="closeSuccessModal" class="btn-primary rounded-xl px-4 py-2">Voltar para Movimentações</button>
                                     </div>
                                 </div>
                             </div>
@@ -413,6 +437,8 @@
                     previewRows: []
                 });
                 const bulkModal = reactive(createBulkModalState());
+                const processModal = reactive({ open: false, title: '', message: '' });
+                const successModal = reactive({ open: false, title: '', message: '' });
 
                 const pageContent = {
                     dashboard: 'Visão executiva com KPIs de estoque crítico e consumo médio.',
@@ -636,6 +662,30 @@
                     Object.assign(bulkModal, createBulkModalState());
                 };
 
+                const openProcessModal = (title, message) => {
+                    processModal.open = true;
+                    processModal.title = title;
+                    processModal.message = message;
+                };
+
+                const closeProcessModal = () => {
+                    processModal.open = false;
+                    processModal.title = '';
+                    processModal.message = '';
+                };
+
+                const openSuccessModal = (title, message) => {
+                    successModal.open = true;
+                    successModal.title = title;
+                    successModal.message = message;
+                };
+
+                const closeSuccessModal = () => {
+                    successModal.open = false;
+                    successModal.title = '';
+                    successModal.message = '';
+                };
+
                 const parseBulkText = (text) => {
                     const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
                     if (!lines.length) return [];
@@ -755,21 +805,47 @@
                             error: (!row.insumo_id ? 'Código AX não encontrado.' : (Number(row.quantidade) > 0 ? '' : 'Quantidade inválida'))
                         }));
 
-                        const resp = await runGAS('saveBulkMovimentacao', {
-                            request_id: generateClientUUID(),
+                        const requestId = generateClientUUID();
+                        const payload = {
+                            request_id: requestId,
                             rows: sanitizedRows,
                             usuario_email: session.value?.user?.email,
                             data_iso: bulkModal.data_iso,
                             tipo: bulkModal.tipo,
                             observacao: bulkModal.observacao,
                             file_name: bulkModal.fileName
-                        });
-                        if (resp.success === false) throw new Error(resp.message);
+                        };
 
+                        openProcessModal('Processando upload em lote', 'Validando itens e registrando movimentações...');
+
+                        let resp = null;
+                        for (let attempt = 0; attempt < 6; attempt += 1) {
+                            try {
+                                processModal.message = `Processando requisição (${attempt + 1}/6)...`;
+                                resp = await runGAS('saveBulkMovimentacao', payload);
+                                if (resp.success === false) throw new Error(resp.message);
+                                break;
+                            } catch (error) {
+                                const msg = error?.message || String(error);
+                                if (msg.includes('já em processamento') && attempt < 5) {
+                                    processModal.message = 'Requisição em processamento no servidor. Sincronizando resultado...';
+                                    await sleep(1200);
+                                    continue;
+                                }
+                                throw error;
+                            }
+                        }
+
+                        if (!resp) {
+                            throw new Error('Não foi possível obter confirmação do upload. Tente novamente em alguns segundos.');
+                        }
+
+                        closeProcessModal();
                         closeBulkModal();
                         loadCurrentModuleDebounced();
-                        errorMessage.value = `Upload salvo. ID: ${resp.upload_id} | Movimentos: ${resp.total_movimentos}`;
+                        openSuccessModal('Upload concluído com sucesso', `ID: ${resp.upload_id} | Movimentos: ${resp.total_movimentos}`);
                     } catch (error) {
+                        closeProcessModal();
                         errorMessage.value = error.message || String(error);
                     } finally {
                         bulkModal.loading = false;
@@ -832,6 +908,8 @@
                     movForm,
                     uploadHistory,
                     bulkModal,
+                    processModal,
+                    successModal,
                     isAuthenticated,
                     handleLogin,
                     logout,
@@ -841,6 +919,7 @@
                     submitMovimentacao,
                     openBulkModal,
                     closeBulkModal,
+                    closeSuccessModal,
                     onBulkFileChange,
                     prepareBulkUpload,
                     saveBulkUpload,
