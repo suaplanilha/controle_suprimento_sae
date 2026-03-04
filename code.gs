@@ -1,8 +1,8 @@
 /**
  * SISTEMA APOLLO ENTERPRISE (SAE) - BACKEND APLICAÇÃO DE SUPRIMENTOS
  *
- * ORDEM DE CARREGAMENTO: Carregue após models.gs e services.gs
- * DEPENDE: SAE.* (de models.gs), ValidationService, StockService, AuditLogger (de services.gs)
+ * ORDEM DE CARREGAMENTO: Carregue após models.gs, core.gs, repositories.gs e services.gs
+ * DEPENDE: SAE.* (de models.gs), core/repositories helpers, ValidationService, StockService, AuditLogger (de services.gs)
  * DECLARA: Funções públicas (doGet, doLogin, updateStockLevel, etc.)
  */
 
@@ -22,7 +22,6 @@ const SAE_CACHE = {
   CONFIG_TTL_MS: 5 * 60 * 1000
 };
 
-const SAE_LOG_PREFIX = '[SAE]';
 
 function doGet(e) {
   const reqMeta = {
@@ -1147,38 +1146,6 @@ function readConfigMap(options) {
   return map;
 }
 
-function readTable(sheetName) {
-  const sheet = getSheetOrThrow(sheetName);
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return [];
-
-  const headers = data[0].map(String);
-  return data.slice(1)
-    .filter(row => row.some(cell => cell !== ''))
-    .map(row => headers.reduce((obj, header, idx) => {
-      obj[header] = row[idx];
-      return obj;
-    }, {}));
-}
-
-function insertRow(sheetName, rowObject) {
-  const sheet = getSheetOrThrow(sheetName);
-  const headers = getHeaders(sheet);
-  const row = headers.map(h => rowObject[h] !== undefined ? rowObject[h] : '');
-  sheet.appendRow(row);
-}
-
-function batchInsertRows(sheetName, rows) {
-  if (!rows || !rows.length) return;
-  const sheet = getSheetOrThrow(sheetName);
-  const headers = getHeaders(sheet);
-  const values = rows.map(rowObj => headers.map(h => rowObj[h] !== undefined ? rowObj[h] : ''));
-  sheet.getRange(sheet.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
-}
-
-function findById(sheetName, uuid) {
-  return readTable(sheetName).find(row => row.uuid === uuid);
-}
 
 function findByCodigoAX(sheetName, codigoAX) {
   const normalized = sanitizeCodigoAX(codigoAX);
@@ -1230,27 +1197,6 @@ function applyStockMutation(saldo, tipo, quantidade) {
   return saldo + quantidade;
 }
 
-function findRowIndexByUuid(sheet, uuid) {
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0].map(String);
-  const idxUuid = headers.indexOf('uuid');
-  if (idxUuid === -1) return -1;
-
-  for (let i = 1; i < data.length; i += 1) {
-    if (String(data[i][idxUuid]) === String(uuid)) return i + 1;
-  }
-  return -1;
-}
-
-function updateRowByHeaderMap(sheet, headers, rowIndex, patch) {
-  if (rowIndex < 2) return;
-  Object.keys(patch).forEach(key => {
-    const idx = headers.indexOf(key);
-    if (idx > -1) {
-      sheet.getRange(rowIndex, idx + 1).setValue(patch[key]);
-    }
-  });
-}
 
 function sanitizeMovementRow(row) {
   return {
@@ -1263,117 +1209,6 @@ function sanitizeMovementRow(row) {
 }
 
 
-function generateUUID() {
-  if (typeof Utilities !== 'undefined' && Utilities.getUuid) {
-    return Utilities.getUuid();
-  }
-
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.floor(Math.random() * 16);
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-function sanitizeCodigoAX(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-
-  if (/^0+\d+$/.test(raw)) {
-    return String(Number(raw));
-  }
-  return raw;
-}
-
-function sanitizeNumber(value, fieldName) {
-  if (value === '' || value === null || value === undefined) return 0;
-  const normalized = String(value).replace(',', '.').trim();
-  const num = Number(normalized);
-
-  if (!Number.isFinite(num)) {
-    if (fieldName) {
-      throw new Error(`Campo numérico inválido: ${fieldName}`);
-    }
-    return 0;
-  }
-  return num;
-}
-
-function executeSafely(fn, contextName) {
-  const context = contextName || resolveExecutionContext_();
-  const start = new Date().getTime();
-  try {
-    const result = fn();
-    const elapsedMs = new Date().getTime() - start;
-    saeLog_('DEBUG', `executeSafely sucesso: ${context}`, {
-      elapsedMs,
-      resultShape: summarizeResultShape_(result)
-    });
-    return result;
-  } catch (error) {
-    const elapsedMs = new Date().getTime() - start;
-    // Nota: idempotência de falha é tratada no escopo da função de negócio
-    // (ex.: saveBulkMovimentacao chama IdempotencyService.markAsFailure no catch interno).
-    saeLog_('ERROR', `executeSafely falha: ${context}`, {
-      elapsedMs,
-      error: error && error.stack ? String(error.stack) : (error && error.message ? error.message : String(error))
-    });
-    return {
-      success: false,
-      message: error && error.message ? error.message : String(error)
-    };
-  }
-}
-
-function saeLog_(level, message, data) {
-  const payload = data ? ` | ${safeStringify_(data)}` : '';
-  console.log(`${SAE_LOG_PREFIX} [${level}] ${message}${payload}`);
-}
-
-function safeStringify_(value) {
-  try {
-    return JSON.stringify(value);
-  } catch (error) {
-    return String(value);
-  }
-}
-
-function sanitizeForLog_(value) {
-  if (!value || typeof value !== 'object') return value;
-  const clone = JSON.parse(JSON.stringify(value));
-  if (clone.password !== undefined) clone.password = '[MASKED]';
-  if (clone.senha !== undefined) clone.senha = '[MASKED]';
-  return clone;
-}
-
-function summarizeResultShape_(result) {
-  if (result === null || result === undefined) return String(result);
-  if (Array.isArray(result)) return { type: 'array', length: result.length };
-  if (typeof result !== 'object') return { type: typeof result };
-  const keys = Object.keys(result);
-  return {
-    type: 'object',
-    keys,
-    success: result.success,
-    dataLength: Array.isArray(result.data) ? result.data.length : undefined
-  };
-}
-
-function resolveExecutionContext_() {
-  try {
-    const stack = new Error().stack || '';
-    const lines = String(stack).split('\n').map(line => line.trim());
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      if (line && line.indexOf('executeSafely') === -1 && line.indexOf('resolveExecutionContext_') === -1) {
-        return line;
-      }
-    }
-  } catch (error) {
-    // noop
-  }
-  return 'unknown_context';
-}
 
 
 function sae_setupDatabase() {
@@ -1424,18 +1259,6 @@ function sae_setupDatabase() {
   }, 'sae_setupDatabase');
 }
 
-function getSheetOrThrow(name) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
-  if (!sheet) {
-    throw new Error(`Aba não encontrada: ${name}. Execute sae_setupDatabase() para criar a estrutura.`);
-  }
-  return sheet;
-}
-
-function getHeaders(sheet) {
-  const lastColumn = Math.max(sheet.getLastColumn(), 1);
-  return sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String);
-}
 
 function validateRequired(payload, requiredFields) {
   if (!payload || typeof payload !== 'object') {
@@ -1448,23 +1271,6 @@ function validateRequired(payload, requiredFields) {
   });
 }
 
-function normalizeHeader(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_');
-}
-
-function toIsoString(value) {
-  if (!value) return new Date().toISOString();
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error('Data inválida para a movimentação.');
-  }
-  return date.toISOString();
-}
 
 function parseAllowedPages(rawPages) {
   const raw = String(rawPages || '').trim();
