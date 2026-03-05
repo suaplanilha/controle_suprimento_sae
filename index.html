@@ -287,11 +287,52 @@
                         </template>
 
                         <template v-else-if="currentPage === 'dashboard'">
+                            <div class="flex flex-wrap gap-3 items-center">
+                                <select v-model="dashboardFilters.year" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option v-for="year in dashboardYearOptions" :key="`dashboard-year-${year}`" :value="year">{{ year }}</option>
+                                </select>
+                                <select v-model="dashboardFilters.month" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option value="">Todos os meses</option>
+                                    <option v-for="month in dashboardMonthOptions" :key="`dashboard-month-${month.value}`" :value="month.value">{{ month.label }}</option>
+                                </select>
+                                <input v-model="dashboardFilters.query" placeholder="Buscar AX ou descrição" class="flex-1 min-w-[240px] bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                                <button @click="applyDashboardFilters" :disabled="moduleLoading" class="btn-primary rounded-xl px-4 py-2 text-sm disabled:opacity-50">Atualizar KPIs</button>
+                            </div>
                             <div class="grid md:grid-cols-4 gap-4">
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Total Itens</p><p class="text-2xl font-bold">{{ moduleData.dashboard?.summary?.total ?? '-' }}</p></div>
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Críticos</p><p class="text-2xl font-bold text-red-300">{{ moduleData.dashboard?.summary?.criticos ?? '-' }}</p></div>
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Em Alerta</p><p class="text-2xl font-bold text-amber-300">{{ moduleData.dashboard?.summary?.em_alerta ?? '-' }}</p></div>
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Saudáveis</p><p class="text-2xl font-bold text-emerald-300">{{ moduleData.dashboard?.summary?.saudaveis ?? '-' }}</p></div>
+                            </div>
+                            <div class="max-h-96 overflow-auto border border-slate-700 rounded-xl">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-right">Consumo Mês Atual</th><th class="p-2 text-right">Disponível Hoje</th><th class="p-2 text-right">Ponto Ressupr.</th><th class="p-2 text-right">Dias Estimados</th><th class="p-2 text-right">Meses Estimados</th><th class="p-2 text-right">Média Mensal</th><th class="p-2 text-right">Lead Time</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Status</th></tr></thead>
+                                    <tbody>
+                                        <template v-if="moduleLoading">
+                                            <tr v-for="n in 8" :key="`dash-kpi-skeleton-${n}`" class="border-t border-slate-800">
+                                                <td class="p-2" colspan="11"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                            </tr>
+                                        </template>
+                                        <template v-else>
+                                            <tr v-for="item in (moduleData.dashboard?.data || [])" :key="item.uuid" class="border-t border-slate-800">
+                                                <td class="p-2">{{ item.codigo_ax || '-' }}</td>
+                                                <td class="p-2">{{ item.descricao || '-' }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consumo_mes_atual) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.saldo_atual) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.ponto_ressuprimento) }}</td>
+                                                <td class="p-2 text-right">{{ item.dias_estimados_consumo === null ? '-' : sanitizeNumberUi(item.dias_estimados_consumo) }}</td>
+                                                <td class="p-2 text-right">{{ item.meses_estimados_consumo === null ? '-' : sanitizeNumberUi(item.meses_estimados_consumo) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consumo_medio_mensal) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.lead_time) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consenso_dias) }}</td>
+                                                <td class="p-2 text-center">
+                                                    <span class="text-[11px] font-semibold px-2 py-1 rounded-full" :class="item.status_estoque === 'CRITICO' ? 'bg-red-500/20 text-red-300' : (item.status_estoque === 'ALERTA' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300')">{{ item.status_estoque || '-' }}</span>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p v-if="!moduleLoading && !(moduleData.dashboard?.data || []).length" class="p-3 text-slate-500">Sem dados para os filtros selecionados.</p>
                             </div>
                             <p class="text-slate-300">{{ pageContent[currentPage] }}</p>
                         </template>
@@ -694,7 +735,28 @@
                 const errorMessage = ref('');
                 const session = ref(null);
                 const currentPage = ref('dashboard');
+                const now = new Date();
                 const form = reactive({ email: '', password: '' });
+                const dashboardFilters = reactive({
+                    year: now.getFullYear(),
+                    month: '',
+                    query: ''
+                });
+                const dashboardYearOptions = Array.from({ length: 6 }, (_, idx) => now.getFullYear() - idx);
+                const dashboardMonthOptions = [
+                    { value: 1, label: 'Janeiro' },
+                    { value: 2, label: 'Fevereiro' },
+                    { value: 3, label: 'Março' },
+                    { value: 4, label: 'Abril' },
+                    { value: 5, label: 'Maio' },
+                    { value: 6, label: 'Junho' },
+                    { value: 7, label: 'Julho' },
+                    { value: 8, label: 'Agosto' },
+                    { value: 9, label: 'Setembro' },
+                    { value: 10, label: 'Outubro' },
+                    { value: 11, label: 'Novembro' },
+                    { value: 12, label: 'Dezembro' }
+                ];
                 const insumosQuery = ref('');
                 const insumosStatus = ref('ATIVO');
                 const fornecedoresQuery = ref('');
@@ -853,10 +915,22 @@
 
                 const loadDashboard = async () => {
                     moduleLoading.value = true;
-                    const resp = await runGAS('getDashboardData', {});
-                    if (resp.success === false) throw new Error(resp.message);
-                    moduleData.dashboard = resp;
-                    moduleLoading.value = false;
+                    try {
+                        const payload = {
+                            year: Number(dashboardFilters.year || now.getFullYear()),
+                            month: dashboardFilters.month ? Number(dashboardFilters.month) : undefined,
+                            query: String(dashboardFilters.query || '').trim()
+                        };
+                        const resp = await runGAS('getDashboardData', payload);
+                        if (resp.success === false) throw new Error(resp.message);
+                        moduleData.dashboard = resp;
+                    } finally {
+                        moduleLoading.value = false;
+                    }
+                };
+
+                const applyDashboardFilters = async () => {
+                    await loadDashboard();
                 };
 
                 const loadInsumos = async (page = 1) => {
@@ -1603,6 +1677,9 @@
 
                 return {
                     form,
+                    dashboardFilters,
+                    dashboardYearOptions,
+                    dashboardMonthOptions,
                     loading,
                     moduleLoading,
                     errorMessage,
@@ -1633,6 +1710,7 @@
                     logout,
                     goToPage,
                     loadCurrentModule,
+                    applyDashboardFilters,
                     loadInsumos,
                     goToInsumosPage,
                     loadFornecedores,
