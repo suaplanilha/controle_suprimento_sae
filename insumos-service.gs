@@ -32,8 +32,12 @@ function listInsumos(payload) {
       });
     }
 
-    if (safe.status) {
-      rows = rows.filter(r => String(r.ativo) === String(safe.status).toUpperCase());
+    const statusFilter = String(safe.status || '').trim().toUpperCase();
+    if (statusFilter) {
+      if (!['ATIVO', 'INATIVO'].includes(statusFilter)) {
+        throw new Error('Filtro de status inválido para insumos. Use ATIVO ou INATIVO.');
+      }
+      rows = rows.filter(r => String(r.ativo) === statusFilter);
     }
 
     rows.sort((a, b) => String(a.codigo_ax).localeCompare(String(b.codigo_ax)));
@@ -43,8 +47,8 @@ function listInsumos(payload) {
 
 function saveInsumo(payload) {
   return executeSafely(() => {
-    validateRequired(payload, ['codigo_ax', 'descricao', 'unidade', 'lead_time', 'estoque_minimo', 'consenso_dias', 'categoria']);
-    if (payload.usuario_email) checkUserPermission(payload.usuario_email, 'insumos');
+    validateRequired(payload, ['codigo_ax', 'descricao', 'unidade', 'lead_time', 'estoque_minimo', 'consenso_dias', 'categoria', 'usuario_email']);
+    checkUserPermission(payload.usuario_email, 'insumos');
 
     const sheet = getSheetOrThrow(SAE_TABLES.INSUMOS);
     const headers = getHeaders(sheet);
@@ -85,8 +89,8 @@ function saveInsumo(payload) {
 
 function inactivateInsumo(payload) {
   return executeSafely(() => {
-    validateRequired(payload, ['uuid']);
-    if (payload.usuario_email) checkUserPermission(payload.usuario_email, 'insumos');
+    validateRequired(payload, ['uuid', 'usuario_email']);
+    checkUserPermission(payload.usuario_email, 'insumos');
 
     const sheet = getSheetOrThrow(SAE_TABLES.INSUMOS);
     const headers = getHeaders(sheet);
@@ -100,9 +104,10 @@ function inactivateInsumo(payload) {
 
 function importCSVData(csvContent, actorEmail) {
   return executeSafely(() => {
-    if (actorEmail) {
-      checkUserPermission(actorEmail, 'insumos');
+    if (!String(actorEmail || '').trim()) {
+      throw new Error('usuario_email obrigatório para importar CSV de insumos.');
     }
+    checkUserPermission(actorEmail, 'insumos');
 
     if (!csvContent || typeof csvContent !== 'string') {
       throw new Error('Conteúdo CSV inválido.');
