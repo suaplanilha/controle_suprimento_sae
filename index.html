@@ -304,6 +304,7 @@
                                     <option value="INATIVO">Inativos</option>
                                     <option value="">Todos</option>
                                 </select>
+                                <button @click="openInsumoCreateModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Novo Insumo</button>
                             </div>
                             <div class="flex items-center justify-between text-xs text-slate-400">
                                 <p>Cadastro mestre de insumos</p>
@@ -330,7 +331,10 @@
                                                 <td class="p-2 text-center">{{ item.categoria || '-' }}</td>
                                                 <td class="p-2 text-center">{{ item.ativo || '-' }}</td>
                                                 <td class="p-2 text-center">
-                                                    <button class="text-xs border border-slate-600 rounded px-2 py-1 opacity-60 cursor-not-allowed" disabled>CRUD em implantação</button>
+                                                    <div class="flex items-center justify-center gap-2">
+                                                        <button @click="openInsumoEditModal(item)" class="text-xs border border-sky-600 rounded px-2 py-1 text-sky-200 hover:bg-sky-500/10">Editar</button>
+                                                        <button @click="softDeleteInsumo(item)" :disabled="insumosTable.loading" class="text-xs border border-red-600 rounded px-2 py-1 text-red-200 hover:bg-red-500/10 disabled:opacity-40">Inativar</button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         </template>
@@ -343,6 +347,36 @@
                                 <button @click="goToInsumosPage(insumosTable.pagination.page - 1)" :disabled="insumosTable.loading || insumosTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
                                 <button @click="goToInsumosPage(insumosTable.pagination.page + 1)" :disabled="insumosTable.loading || insumosTable.pagination.page >= insumosTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
                                 <button @click="goToInsumosPage(insumosTable.pagination.totalPages || 1)" :disabled="insumosTable.loading || insumosTable.pagination.page >= insumosTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Última</button>
+                            </div>
+
+                            <div v-if="insumoModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div class="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-lg font-semibold">{{ insumoModal.mode === 'create' ? 'Cadastrar Insumo' : 'Editar Insumo' }}</h4>
+                                        <button @click="closeInsumoModal" class="text-slate-400 hover:text-white">✕</button>
+                                    </div>
+                                    <div class="grid md:grid-cols-2 gap-3">
+                                        <input v-model="insumoForm.codigo_ax" placeholder="Código AX" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <input v-model="insumoForm.descricao" placeholder="Descrição" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <input v-model="insumoForm.unidade" placeholder="Unidade" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <select v-model="insumoForm.fornecedor_id" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                            <option value="">Fornecedor (opcional)</option>
+                                            <option v-for="f in fornecedorOptions" :key="f.uuid" :value="f.uuid">{{ f.nome_fantasia }}</option>
+                                        </select>
+                                        <input v-model.number="insumoForm.lead_time" type="number" min="0" placeholder="Lead Time" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <input v-model.number="insumoForm.estoque_minimo" type="number" min="0" placeholder="Estoque Mínimo" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <input v-model.number="insumoForm.consenso_dias" type="number" min="0" placeholder="Consenso Dias" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <select v-model="insumoForm.categoria" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                            <option value="A">Categoria A</option>
+                                            <option value="B">Categoria B</option>
+                                            <option value="C">Categoria C</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex justify-end gap-2">
+                                        <button @click="closeInsumoModal" class="border border-slate-600 rounded-xl px-4 py-2">Cancelar</button>
+                                        <button @click="saveInsumoForm" :disabled="insumoModal.loading" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">{{ insumoModal.loading ? 'Salvando...' : 'Salvar' }}</button>
+                                    </div>
+                                </div>
                             </div>
                         </template>
 
@@ -565,6 +599,21 @@
                     pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 }
                 });
 
+                const createInsumoFormState = () => ({
+                    uuid: '',
+                    codigo_ax: '',
+                    descricao: '',
+                    unidade: 'UN',
+                    fornecedor_id: '',
+                    lead_time: 0,
+                    estoque_minimo: 0,
+                    consenso_dias: 0,
+                    categoria: 'C'
+                });
+                const insumoForm = reactive(createInsumoFormState());
+                const insumoModal = reactive({ open: false, mode: 'create', loading: false });
+                const fornecedorOptions = ref([]);
+
                 const createModuleState = () => ({ dashboard: null, insumos: null, compras: null });
                 const moduleData = reactive(createModuleState());
 
@@ -701,6 +750,86 @@
                     const target = Math.max(1, Number(page || 1));
                     await loadInsumos(target);
                 };
+                const ensureFornecedorOptions = async () => {
+                    const resp = await runGAS('getFornecedorOptions');
+                    if (resp.success === false) throw new Error(resp.message);
+                    fornecedorOptions.value = Array.isArray(resp.data) ? resp.data : [];
+                };
+
+                const openInsumoCreateModal = async () => {
+                    Object.assign(insumoForm, createInsumoFormState());
+                    insumoModal.mode = 'create';
+                    insumoModal.open = true;
+                    await ensureFornecedorOptions();
+                };
+
+                const openInsumoEditModal = async (item) => {
+                    Object.assign(insumoForm, {
+                        uuid: String(item.uuid || ''),
+                        codigo_ax: String(item.codigo_ax || ''),
+                        descricao: String(item.descricao || ''),
+                        unidade: String(item.unidade || 'UN'),
+                        fornecedor_id: String(item.fornecedor_id || ''),
+                        lead_time: Number(item.lead_time || 0),
+                        estoque_minimo: Number(item.estoque_minimo || 0),
+                        consenso_dias: Number(item.consenso_dias || 0),
+                        categoria: String(item.categoria || 'C')
+                    });
+                    insumoModal.mode = 'edit';
+                    insumoModal.open = true;
+                    await ensureFornecedorOptions();
+                };
+
+                const closeInsumoModal = () => {
+                    insumoModal.open = false;
+                    insumoModal.loading = false;
+                    Object.assign(insumoForm, createInsumoFormState());
+                };
+
+                const saveInsumoForm = async () => {
+                    insumoModal.loading = true;
+                    try {
+                        const payload = {
+                            uuid: insumoForm.uuid || undefined,
+                            codigo_ax: insumoForm.codigo_ax,
+                            descricao: insumoForm.descricao,
+                            unidade: insumoForm.unidade,
+                            fornecedor_id: insumoForm.fornecedor_id,
+                            lead_time: Number(insumoForm.lead_time || 0),
+                            estoque_minimo: Number(insumoForm.estoque_minimo || 0),
+                            consenso_dias: Number(insumoForm.consenso_dias || 0),
+                            categoria: insumoForm.categoria,
+                            usuario_email: session.value?.user?.email
+                        };
+                        const resp = await runGAS('saveInsumo', payload);
+                        if (resp.success === false) throw new Error(resp.message);
+                        closeInsumoModal();
+                        await loadInsumos(insumosTable.pagination.page || 1);
+                        ensureInsumosLookupCache(true).catch(() => {});
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    } finally {
+                        insumoModal.loading = false;
+                    }
+                };
+
+                const softDeleteInsumo = async (item) => {
+                    const uuid = String(item?.uuid || '').trim();
+                    if (!uuid) return;
+                    const ok = window.confirm(`Confirma inativar o insumo ${item.codigo_ax} - ${item.descricao}?`);
+                    if (!ok) return;
+                    try {
+                        const resp = await runGAS('inactivateInsumo', {
+                            uuid,
+                            usuario_email: session.value?.user?.email
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        await loadInsumos(insumosTable.pagination.page || 1);
+                        ensureInsumosLookupCache(true).catch(() => {});
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    }
+                };
 
                 const loadCompras = async () => {
                     moduleLoading.value = true;
@@ -829,7 +958,10 @@
                         if (typeof google === 'undefined' || !google?.script?.run) return;
 
                         if (currentPage.value === 'dashboard') await loadDashboard();
-                        if (currentPage.value === 'insumos') await loadInsumos();
+                        if (currentPage.value === 'insumos') {
+                            await loadInsumos();
+                            await ensureFornecedorOptions();
+                        }
                         if (currentPage.value === 'compras') await loadCompras();
                         if (currentPage.value === 'movimentacoes') {
                             await loadUploadHistory();
@@ -1227,6 +1359,8 @@
                     insumosLookupCache.byCodigo = {};
                     closeBulkModal();
                     closeManualModal();
+                    closeInsumoModal();
+                    fornecedorOptions.value = [];
                     await refreshIcons();
                 };
 
@@ -1244,6 +1378,9 @@
                     insumosQuery,
                     insumosStatus,
                     insumosTable,
+                    insumoForm,
+                    insumoModal,
+                    fornecedorOptions,
                     movForm,
                     manualModal,
                     uploadHistory,
@@ -1258,6 +1395,11 @@
                     loadCurrentModule,
                     loadInsumos,
                     goToInsumosPage,
+                    openInsumoCreateModal,
+                    openInsumoEditModal,
+                    closeInsumoModal,
+                    saveInsumoForm,
+                    softDeleteInsumo,
                     submitMovimentacao,
                     openManualModal,
                     closeManualModal,
