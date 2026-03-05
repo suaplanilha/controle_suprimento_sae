@@ -230,6 +230,25 @@ function getUploadHistory(limit) {
   });
 }
 
+
+function deleteMovimentacao(payload) {
+  return executeSafely(() => {
+    validateRequired(payload, ['uuid']);
+    checkUserPermission(payload.usuario_email, 'movimentacoes');
+
+    const deleted = deleteRowByUuidFast(SAE_TABLES.MOVIMENTACOES, payload.uuid);
+    if (!deleted) {
+      throw new Error('Movimentação não encontrada para exclusão.');
+    }
+
+    return {
+      success: true,
+      message: 'Movimentação excluída com sucesso.',
+      uuid: String(payload.uuid)
+    };
+  }, 'deleteMovimentacao');
+}
+
 function listMovimentacoes(payload) {
   return executeSafely(() => {
     const safe = payload || {};

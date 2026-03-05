@@ -72,3 +72,28 @@ function updateRowByHeaderMap(sheet, headers, rowIndex, patch) {
     }
   });
 }
+
+
+function deleteRowByUuidFast(sheetName, uuid) {
+  const targetUuid = String(uuid || '').trim();
+  if (!targetUuid) {
+    throw new Error('UUID obrigatório para exclusão.');
+  }
+
+  const sheet = getSheetOrThrow(sheetName);
+  const headers = getHeaders(sheet);
+  const idxUuid = headers.indexOf('uuid');
+  if (idxUuid === -1) {
+    throw new Error(`Coluna uuid não encontrada na aba: ${sheetName}`);
+  }
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+
+  const uuidRange = sheet.getRange(2, idxUuid + 1, lastRow - 1, 1);
+  const match = uuidRange.createTextFinder(targetUuid).matchEntireCell(true).findNext();
+  if (!match) return false;
+
+  sheet.deleteRow(match.getRow());
+  return true;
+}

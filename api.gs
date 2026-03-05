@@ -24,7 +24,8 @@ function dispatchApiRequest_(e) {
     get_movimentacoes: () => listMovimentacoes(data),
     update_stock: () => updateStockLevel(data),
     prepare_bulk: () => prepareBulkMovimentacao(data),
-    save_bulk: () => saveBulkMovimentacao(data)
+    save_bulk: () => saveBulkMovimentacao(data),
+    delete_movimentacao: () => deleteMovimentacao(data)
   };
 
   if (!handlers[action]) {
