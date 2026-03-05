@@ -415,6 +415,83 @@
                             </div>
                         </template>
 
+                        <template v-else-if="currentPage === 'fornecedores'">
+                            <div class="flex flex-wrap gap-3 items-center">
+                                <input v-model="fornecedoresQuery" @input="goToFornecedoresPage(1)" placeholder="Buscar nome, CNPJ ou contato" class="flex-1 min-w-[240px] bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                                <select v-model="fornecedoresStatus" @change="goToFornecedoresPage(1)" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option value="ATIVO">Ativos</option>
+                                    <option value="INATIVO">Inativos</option>
+                                    <option value="">Todos</option>
+                                </select>
+                                <button @click="openFornecedorCreateModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Novo Fornecedor</button>
+                            </div>
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <p>Cadastro mestre de fornecedores</p>
+                                <p>Página {{ fornecedoresTable.pagination.page }} de {{ fornecedoresTable.pagination.totalPages }}</p>
+                            </div>
+                            <div class="max-h-80 overflow-auto border border-slate-700 rounded-xl">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">Nome Fantasia</th><th class="p-2 text-left">Razão Social</th><th class="p-2 text-left">CNPJ</th><th class="p-2 text-left">Contato</th><th class="p-2 text-left">Telefone</th><th class="p-2 text-left">E-mail</th><th class="p-2 text-right">Frete</th><th class="p-2 text-center">Status</th><th class="p-2 text-center">Ações</th></tr></thead>
+                                    <tbody>
+                                        <template v-if="fornecedoresTable.loading || moduleLoading">
+                                            <tr v-for="n in 6" :key="`fornecedor-skeleton-${n}`" class="border-t border-slate-800">
+                                                <td class="p-2" colspan="9"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                            </tr>
+                                        </template>
+                                        <template v-else>
+                                            <tr v-for="item in fornecedoresTable.rows" :key="item.uuid" class="border-t border-slate-800">
+                                                <td class="p-2">{{ item.nome_fantasia || '-' }}</td>
+                                                <td class="p-2">{{ item.razao_social || '-' }}</td>
+                                                <td class="p-2">{{ item.cnpj || '-' }}</td>
+                                                <td class="p-2">{{ item.contato || '-' }}</td>
+                                                <td class="p-2">{{ item.telefone || '-' }}</td>
+                                                <td class="p-2">{{ item.email || '-' }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.frete) }}</td>
+                                                <td class="p-2 text-center">{{ item.ativo || '-' }}</td>
+                                                <td class="p-2 text-center">
+                                                    <div class="flex items-center justify-center gap-2">
+                                                        <button @click="openFornecedorEditModal(item)" class="inline-flex items-center justify-center w-8 h-8 border border-sky-600 rounded text-sky-200 hover:bg-sky-500/10" title="Editar fornecedor" aria-label="Editar fornecedor">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                                                        </button>
+                                                        <button @click="softDeleteFornecedor(item)" :disabled="fornecedoresTable.loading" class="inline-flex items-center justify-center w-8 h-8 border border-red-600 rounded text-red-200 hover:bg-red-500/10 disabled:opacity-40" title="Inativar fornecedor" aria-label="Inativar fornecedor">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p v-if="!fornecedoresTable.rows.length && !fornecedoresTable.loading" class="p-3 text-slate-500">Sem fornecedores para os filtros informados.</p>
+                            </div>
+                            <div class="flex items-center justify-end gap-2">
+                                <button @click="goToFornecedoresPage(fornecedoresTable.pagination.page - 1)" :disabled="fornecedoresTable.loading || fornecedoresTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
+                                <button @click="goToFornecedoresPage(fornecedoresTable.pagination.page + 1)" :disabled="fornecedoresTable.loading || fornecedoresTable.pagination.page >= fornecedoresTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
+                            </div>
+
+                            <div v-if="fornecedorModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div class="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-lg font-semibold">{{ fornecedorModal.mode === 'create' ? 'Novo Fornecedor' : 'Editar Fornecedor' }}</h4>
+                                        <button @click="closeFornecedorModal" class="text-slate-400 hover:text-white">✕</button>
+                                    </div>
+                                    <div class="grid md:grid-cols-2 gap-3">
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Nome Fantasia</span><input v-model="fornecedorForm.nome_fantasia" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Razão Social</span><input v-model="fornecedorForm.razao_social" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">CNPJ</span><input v-model="fornecedorForm.cnpj" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Contato</span><input v-model="fornecedorForm.contato" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Telefone</span><input v-model="fornecedorForm.telefone" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">E-mail</span><input v-model="fornecedorForm.email" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Frete</span><input v-model.number="fornecedorForm.frete" type="number" min="0" step="0.01" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                    </div>
+                                    <div class="flex justify-end gap-2">
+                                        <button @click="closeFornecedorModal" class="border border-slate-600 rounded-xl px-4 py-2">Cancelar</button>
+                                        <button @click="saveFornecedorForm" :disabled="fornecedorModal.loading" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">{{ fornecedorModal.loading ? 'Salvando...' : 'Salvar' }}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+
                         <template v-else-if="currentPage === 'movimentacoes'">
                             <div class="flex items-center justify-between gap-3">
                                 <p class="text-slate-300 text-sm">Operação manual e upload em massa de movimentações.</p>
@@ -620,6 +697,8 @@
                 const form = reactive({ email: '', password: '' });
                 const insumosQuery = ref('');
                 const insumosStatus = ref('ATIVO');
+                const fornecedoresQuery = ref('');
+                const fornecedoresStatus = ref('ATIVO');
                 const uploadHistory = ref([]);
                 const movimentacoesTable = reactive({
                     loading: false,
@@ -629,6 +708,11 @@
                 });
                 const insumosLookupCache = reactive({ loaded: false, loading: false, loadedAt: 0, byCodigo: {} });
                 const insumosTable = reactive({
+                    loading: false,
+                    rows: [],
+                    pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 }
+                });
+                const fornecedoresTable = reactive({
                     loading: false,
                     rows: [],
                     pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 }
@@ -649,7 +733,20 @@
                 const insumoModal = reactive({ open: false, mode: 'create', loading: false });
                 const fornecedorOptions = ref([]);
 
-                const createModuleState = () => ({ dashboard: null, insumos: null, compras: null });
+                const createFornecedorFormState = () => ({
+                    uuid: '',
+                    nome_fantasia: '',
+                    razao_social: '',
+                    cnpj: '',
+                    contato: '',
+                    telefone: '',
+                    email: '',
+                    frete: ''
+                });
+                const fornecedorForm = reactive(createFornecedorFormState());
+                const fornecedorModal = reactive({ open: false, mode: 'create', loading: false });
+
+                const createModuleState = () => ({ dashboard: null, insumos: null, fornecedores: null, compras: null });
                 const moduleData = reactive(createModuleState());
 
                 const createMovFormState = () => ({
@@ -679,6 +776,7 @@
                 const pageContent = {
                     dashboard: 'Visão executiva com KPIs de estoque crítico e consumo médio.',
                     insumos: 'Cadastro mestre de insumos, lead time e classificação ABC.',
+                    fornecedores: 'Cadastro e gestão de fornecedores com contato e custo de frete.',
                     movimentacoes: 'Registro e auditoria de entradas, saídas e ajustes de estoque.',
                     compras: 'Lista de ressuprimento e planejamento de compras por criticidade.',
                     configuracoes: 'Parâmetros do sistema e administração de usuários.'
@@ -866,6 +964,102 @@
                     }
                 };
 
+                const loadFornecedores = async (page = 1) => {
+                    moduleLoading.value = true;
+                    fornecedoresTable.loading = true;
+                    try {
+                        const resp = await runGAS('listFornecedores', {
+                            page,
+                            pageSize: 20,
+                            query: fornecedoresQuery.value,
+                            status: fornecedoresStatus.value
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        fornecedoresTable.rows = resp.data || [];
+                        fornecedoresTable.pagination = resp.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                        moduleData.fornecedores = { data: fornecedoresTable.rows, pagination: fornecedoresTable.pagination };
+                    } finally {
+                        fornecedoresTable.loading = false;
+                        moduleLoading.value = false;
+                    }
+                };
+
+                const goToFornecedoresPage = async (page) => {
+                    const target = Math.max(1, Number(page || 1));
+                    await loadFornecedores(target);
+                };
+
+                const openFornecedorCreateModal = () => {
+                    Object.assign(fornecedorForm, createFornecedorFormState());
+                    fornecedorModal.mode = 'create';
+                    fornecedorModal.open = true;
+                };
+
+                const openFornecedorEditModal = (item) => {
+                    Object.assign(fornecedorForm, {
+                        uuid: String(item.uuid || ''),
+                        nome_fantasia: String(item.nome_fantasia || ''),
+                        razao_social: String(item.razao_social || ''),
+                        cnpj: String(item.cnpj || ''),
+                        contato: String(item.contato || ''),
+                        telefone: String(item.telefone || ''),
+                        email: String(item.email || ''),
+                        frete: Number(item.frete || 0)
+                    });
+                    fornecedorModal.mode = 'edit';
+                    fornecedorModal.open = true;
+                };
+
+                const closeFornecedorModal = () => {
+                    fornecedorModal.open = false;
+                    fornecedorModal.loading = false;
+                    Object.assign(fornecedorForm, createFornecedorFormState());
+                };
+
+                const saveFornecedorForm = async () => {
+                    fornecedorModal.loading = true;
+                    try {
+                        const payload = {
+                            uuid: fornecedorForm.uuid || undefined,
+                            nome_fantasia: fornecedorForm.nome_fantasia,
+                            razao_social: fornecedorForm.razao_social,
+                            cnpj: fornecedorForm.cnpj,
+                            contato: fornecedorForm.contato,
+                            telefone: fornecedorForm.telefone,
+                            email: fornecedorForm.email,
+                            frete: Number(fornecedorForm.frete || 0),
+                            usuario_email: session.value?.user?.email
+                        };
+                        const resp = await runGAS('saveFornecedor', payload);
+                        if (resp.success === false) throw new Error(resp.message);
+                        closeFornecedorModal();
+                        await loadFornecedores(fornecedoresTable.pagination.page || 1);
+                        await ensureFornecedorOptions();
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    } finally {
+                        fornecedorModal.loading = false;
+                    }
+                };
+
+                const softDeleteFornecedor = async (item) => {
+                    const uuid = String(item?.uuid || '').trim();
+                    if (!uuid) return;
+                    const ok = window.confirm(`Confirma inativar o fornecedor ${item.nome_fantasia}?`);
+                    if (!ok) return;
+                    try {
+                        const resp = await runGAS('inactivateFornecedor', {
+                            uuid,
+                            usuario_email: session.value?.user?.email
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        await loadFornecedores(fornecedoresTable.pagination.page || 1);
+                        await ensureFornecedorOptions();
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    }
+                };
+
                 const loadCompras = async () => {
                     moduleLoading.value = true;
                     const resp = await runGAS('getExecutiveSummary', {});
@@ -997,6 +1191,9 @@
                             await loadInsumos();
                             await ensureFornecedorOptions();
                         }
+                        if (currentPage.value === 'fornecedores') {
+                            await loadFornecedores();
+                        }
                         if (currentPage.value === 'compras') await loadCompras();
                         if (currentPage.value === 'movimentacoes') {
                             await loadUploadHistory();
@@ -1069,7 +1266,7 @@
                                 nome: 'Usuário Preview',
                                 email: 'preview@apollo.com',
                                 role: 'ADMIN',
-                                allowed_pages: ['dashboard', 'insumos', 'movimentacoes', 'compras', 'configuracoes'],
+                                allowed_pages: ['dashboard', 'insumos', 'fornecedores', 'movimentacoes', 'compras', 'configuracoes'],
                                 landing_page: 'dashboard'
                             }
                         });
@@ -1386,6 +1583,8 @@
                     uploadHistory.value = [];
                     insumosTable.rows = [];
                     insumosTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                    fornecedoresTable.rows = [];
+                    fornecedoresTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
                     movimentacoesTable.rows = [];
                     movimentacoesTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
                     movimentacoesTable.deletingUuid = '';
@@ -1395,6 +1594,7 @@
                     closeBulkModal();
                     closeManualModal();
                     closeInsumoModal();
+                    closeFornecedorModal();
                     fornecedorOptions.value = [];
                     await refreshIcons();
                 };
@@ -1412,9 +1612,14 @@
                     moduleData,
                     insumosQuery,
                     insumosStatus,
+                    fornecedoresQuery,
+                    fornecedoresStatus,
                     insumosTable,
+                    fornecedoresTable,
                     insumoForm,
                     insumoModal,
+                    fornecedorForm,
+                    fornecedorModal,
                     fornecedorOptions,
                     movForm,
                     manualModal,
@@ -1430,11 +1635,18 @@
                     loadCurrentModule,
                     loadInsumos,
                     goToInsumosPage,
+                    loadFornecedores,
+                    goToFornecedoresPage,
                     openInsumoCreateModal,
                     openInsumoEditModal,
                     closeInsumoModal,
                     saveInsumoForm,
                     softDeleteInsumo,
+                    openFornecedorCreateModal,
+                    openFornecedorEditModal,
+                    closeFornecedorModal,
+                    saveFornecedorForm,
+                    softDeleteFornecedor,
                     submitMovimentacao,
                     openManualModal,
                     closeManualModal,

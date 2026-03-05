@@ -14,6 +14,7 @@ function listFornecedores(payload) {
 
     let rows = readTable(SAE_TABLES.FORNECEDORES).map(row => ({
       ...row,
+      frete: sanitizeNumber(row.frete || 0),
       ativo: String(row.ativo || 'ATIVO').toUpperCase()
     }));
 
@@ -45,6 +46,7 @@ function saveFornecedor(payload) {
       contato: String(payload.contato || '').trim(),
       telefone: String(payload.telefone || '').trim(),
       email: String(payload.email || '').trim(),
+      frete: sanitizeNumber(payload.frete || 0, 'frete'),
       ativo: String(payload.ativo || 'ATIVO').toUpperCase()
     };
 
@@ -57,7 +59,8 @@ function saveFornecedor(payload) {
 
     insertRow(SAE_TABLES.FORNECEDORES, {
       uuid: generateUUID(),
-      ...entity
+      ...entity,
+      criado_em: new Date().toISOString()
     });
     return { success: true, message: 'Fornecedor cadastrado com sucesso.' };
   });
@@ -84,6 +87,7 @@ function getFornecedorOptions() {
       .map(row => ({
         uuid: row.uuid,
         nome_fantasia: row.nome_fantasia,
+        frete: sanitizeNumber(row.frete || 0),
         ativo: String(row.ativo || 'ATIVO').toUpperCase()
       }))
       .filter(row => row.ativo === 'ATIVO')
@@ -122,7 +126,10 @@ function seedFornecedoresFromInsumos() {
           cnpj: '',
           contato: '',
           telefone: '',
-          email: ''
+          email: '',
+          frete: 0,
+          ativo: 'ATIVO',
+          criado_em: new Date().toISOString()
         };
         inserts.push(fornecedor);
         existingByName[key] = fornecedor;
@@ -146,4 +153,3 @@ function seedFornecedoresFromInsumos() {
     };
   });
 }
-

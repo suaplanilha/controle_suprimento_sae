@@ -22,9 +22,16 @@ function sae_setupDatabase() {
       return sheet;
     };
 
+    const ensureColumn = (sheet, columnName) => {
+      const headers = getHeaders(sheet);
+      if (headers.includes(columnName)) return;
+      sheet.getRange(1, headers.length + 1).setValue(columnName).setFontWeight('bold');
+    };
+
     ensureSheet(SAE_TABLES.INSUMOS, ['uuid', 'codigo_ax', 'descricao', 'unidade', 'fornecedor_id', 'lead_time', 'estoque_minimo', 'consenso_dias', 'categoria', 'ativo', 'criado_em']);
     ensureSheet(SAE_TABLES.MOVIMENTACOES, ['uuid', 'data_iso', 'insumo_id', 'codigo_ax', 'tipo', 'quantidade', 'usuario_email', 'observacao']);
-    ensureSheet(SAE_TABLES.FORNECEDORES, ['uuid', 'nome_fantasia', 'razao_social', 'cnpj', 'contato', 'telefone', 'email', 'ativo', 'criado_em']);
+    const fornecedoresSheet = ensureSheet(SAE_TABLES.FORNECEDORES, ['uuid', 'nome_fantasia', 'razao_social', 'cnpj', 'contato', 'telefone', 'email', 'frete', 'ativo', 'criado_em']);
+    ensureColumn(fornecedoresSheet, 'frete');
     ensureSheet(SAE_TABLES.USUARIOS, ['uuid', 'nome', 'email', 'senha', 'permissao', 'paginas_acesso', 'status', 'ultimo_login']);
     ensureSheet(SAE_TABLES.CONFIG, ['parametro', 'valor', 'descricao']);
     ensureSheet(SAE_TABLES.UPLOAD_HISTORY, ['uuid', 'upload_id', 'data_iso', 'tipo', 'arquivo_nome', 'usuario_email', 'total_linhas', 'total_validas', 'total_invalidas', 'detalhes_json', 'criado_em']);
@@ -133,4 +140,3 @@ function test_runAllCalculations() {
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
-
