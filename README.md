@@ -123,7 +123,43 @@ Este documento descreve o status da evolução do módulo de Gestão de Programa
 `uuid, data_iso, insumo_id, codigo_ax, tipo, quantidade, usuario_email, observacao`
 
 ### `cad_fornecedores`
-`uuid, nome_fantasia, razao_social, cnpj, contato, telefone, email`
+`uuid, nome_fantasia, razao_social, cnpj, contato, telefone, email, frete, ativo, criado_em`
+
+## 📊 Contrato do Dashboard (payload e filtros)
+
+### Endpoint/fachada
+- `getDashboardData(filters)`
+
+### Filtros aceitos
+- `year` *(number, opcional; default = ano atual)*
+- `month` *(number 1..12, opcional; quando ausente considera todos os meses do ano)*
+- `query` *(string, opcional; busca por código AX/descrição)*
+
+### Exemplo de payload
+```javascript
+{
+  year: 2026,
+  month: 3,
+  query: '1001 parafuso'
+}
+```
+
+### Campos principais de resposta
+- `success` *(boolean)*
+- `generated_at` *(ISO string)*
+- `period` *(obj: `{ year, month|null }`)*
+- `summary` *(obj: `{ total, criticos, em_alerta, saudaveis }`)*
+- `data[]` (KPIs por insumo), incluindo:
+  - `codigo_ax`, `descricao`
+  - `consumo_mes_atual`
+  - `saldo_atual` (disponível hoje)
+  - `ponto_ressuprimento`
+  - `dias_estimados_consumo`
+  - `meses_estimados_consumo`
+  - `consumo_medio_mensal`
+  - `lead_time`, `consenso_dias`
+  - `status_estoque`
+- `charts.consumo_mensal[]` (série temporal para gráfico opcional ApexCharts)
 
 ### `sys_usuarios`
 `uuid, nome, email, senha, permissao, paginas_acesso, status, ultimo_login`
@@ -189,6 +225,7 @@ Documento atualizado em: 2026-03-02
 - Rode `./check_frontend_syntax.sh` antes de `clasp push`.
 - O script extrai o bloco `<script>` do `index.html` e valida com `node --check`.
 - Isso evita regressões de runtime como `Invalid regular expression` em produção.
+- Rode também `./check_dashboard_smoke.sh` para validar regressões de filtros e contrato do payload do dashboard.
 
 - Render local automatizado: `./check_render_local.sh` (usa curl e valida tokens essenciais da página).
 - Análise de regressão do `index.html` contra baseline estável: `./analyze_index_regression.sh b8fc91f` (aponta diferenças de sintaxe/dependências potencialmente incompatíveis com o painel do GAS).
