@@ -14,6 +14,8 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- SheetJS para leitura de Excel (.xls/.xlsx) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- ApexCharts para gráficos do dashboard (opcional) -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 
     <style>
         :root {
@@ -304,6 +306,25 @@
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Em Alerta</p><p class="text-2xl font-bold text-amber-300">{{ moduleData.dashboard?.summary?.em_alerta ?? '-' }}</p></div>
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Saudáveis</p><p class="text-2xl font-bold text-emerald-300">{{ moduleData.dashboard?.summary?.saudaveis ?? '-' }}</p></div>
                             </div>
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <p>Visualização gráfica opcional para leitura gerencial.</p>
+                                <label class="inline-flex items-center gap-2 cursor-pointer">
+                                    <input v-model="dashboardChartsEnabled" @change="applyDashboardFilters" type="checkbox" class="rounded border-slate-600 bg-slate-900/50" />
+                                    <span>Habilitar gráficos</span>
+                                </label>
+                            </div>
+                            <p v-if="dashboardChartsEnabled && !dashboardChartsState.available" class="text-xs text-amber-300 border border-amber-600/40 rounded-xl px-3 py-2">ApexCharts indisponível no ambiente atual. Mantendo cards e tabela como fallback.</p>
+                            <div v-if="dashboardChartsEnabled && dashboardChartsState.available" class="grid md:grid-cols-2 gap-4">
+                                <div class="border border-slate-700 rounded-xl p-3">
+                                    <p class="text-xs uppercase text-slate-500 mb-2">Série temporal de consumo (SAÍDA)</p>
+                                    <div id="dashboard-consumo-chart" class="min-h-[240px]"></div>
+                                </div>
+                                <div class="border border-slate-700 rounded-xl p-3">
+                                    <p class="text-xs uppercase text-slate-500 mb-2">Disponível hoje x Ponto de ressuprimento (Top críticos)</p>
+                                    <div id="dashboard-critic-chart" class="min-h-[240px]"></div>
+                                </div>
+                            </div>
+                            <p v-if="dashboardRowsLimited" class="text-xs text-amber-300 border border-amber-600/40 rounded-xl px-3 py-2">Exibindo os primeiros {{ DASHBOARD_MAX_ROWS }} itens para preservar performance. Refine os filtros para análise detalhada.</p>
                             <div class="max-h-96 overflow-auto border border-slate-700 rounded-xl">
                                 <table class="w-full text-sm">
                                     <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-right">Consumo Mês Atual</th><th class="p-2 text-right">Disponível Hoje</th><th class="p-2 text-right">Ponto Ressupr.</th><th class="p-2 text-right">Dias Estimados</th><th class="p-2 text-right">Meses Estimados</th><th class="p-2 text-right">Média Mensal</th><th class="p-2 text-right">Lead Time</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Status</th></tr></thead>
@@ -314,7 +335,7 @@
                                             </tr>
                                         </template>
                                         <template v-else>
-                                            <tr v-for="item in (moduleData.dashboard?.data || [])" :key="item.uuid" class="border-t border-slate-800">
+                                            <tr v-for="item in dashboardRows" :key="item.uuid" class="border-t border-slate-800">
                                                 <td class="p-2">{{ item.codigo_ax || '-' }}</td>
                                                 <td class="p-2">{{ item.descricao || '-' }}</td>
                                                 <td class="p-2 text-right">{{ sanitizeNumberUi(item.consumo_mes_atual) }}</td>
@@ -332,7 +353,7 @@
                                         </template>
                                     </tbody>
                                 </table>
-                                <p v-if="!moduleLoading && !(moduleData.dashboard?.data || []).length" class="p-3 text-slate-500">Sem dados para os filtros selecionados.</p>
+                                <p v-if="!moduleLoading && !dashboardRows.length" class="p-3 text-slate-500">Sem dados para os filtros selecionados.</p>
                             </div>
                             <p class="text-slate-300">{{ pageContent[currentPage] }}</p>
                         </template>
@@ -736,6 +757,8 @@
                 const session = ref(null);
                 const currentPage = ref('dashboard');
                 const now = new Date();
+                const DASHBOARD_MAX_ROWS = 300;
+                const DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000;
                 const form = reactive({ email: '', password: '' });
                 const dashboardFilters = reactive({
                     year: now.getFullYear(),
@@ -757,6 +780,13 @@
                     { value: 11, label: 'Novembro' },
                     { value: 12, label: 'Dezembro' }
                 ];
+                const dashboardChartsEnabled = ref(true);
+                const dashboardChartsState = reactive({
+                    available: typeof ApexCharts !== 'undefined',
+                    consumoChart: null,
+                    criticChart: null
+                });
+                const dashboardCache = reactive({ byKey: {} });
                 const insumosQuery = ref('');
                 const insumosStatus = ref('ATIVO');
                 const fornecedoresQuery = ref('');
@@ -845,6 +875,14 @@
                 };
 
                 const isAuthenticated = computed(() => !!session.value);
+                const dashboardRows = computed(() => {
+                    const rows = Array.isArray(moduleData.dashboard?.data) ? moduleData.dashboard.data : [];
+                    return rows.slice(0, DASHBOARD_MAX_ROWS);
+                });
+                const dashboardRowsLimited = computed(() => {
+                    const rows = Array.isArray(moduleData.dashboard?.data) ? moduleData.dashboard.data : [];
+                    return rows.length > DASHBOARD_MAX_ROWS;
+                });
 
                 const refreshIcons = async () => {
                     await nextTick();
@@ -913,17 +951,108 @@
                     runQueue();
                 });
 
+                const dashboardFilterPayload = () => {
+                    const currentYear = new Date().getFullYear();
+                    const year = Number(dashboardFilters.year || currentYear);
+                    const month = dashboardFilters.month === '' ? undefined : Number(dashboardFilters.month);
+
+                    if (!Number.isFinite(year) || year < 2000 || year > currentYear + 1) {
+                        throw new Error(`Ano inválido para dashboard: ${dashboardFilters.year}`);
+                    }
+                    if (month !== undefined && (!Number.isFinite(month) || month < 1 || month > 12)) {
+                        throw new Error(`Mês inválido para dashboard: ${dashboardFilters.month}`);
+                    }
+
+                    return {
+                        year,
+                        month,
+                        query: String(dashboardFilters.query || '').trim()
+                    };
+                };
+
+                const getDashboardFromCache = (key) => {
+                    const cacheItem = dashboardCache.byKey[key];
+                    if (!cacheItem) return null;
+                    if ((Date.now() - cacheItem.ts) > DASHBOARD_CACHE_TTL_MS) return null;
+                    return cacheItem.data;
+                };
+
+                const setDashboardCache = (key, data) => {
+                    dashboardCache.byKey[key] = { ts: Date.now(), data };
+                };
+
+                const destroyDashboardCharts = () => {
+                    if (dashboardChartsState.consumoChart) {
+                        dashboardChartsState.consumoChart.destroy();
+                        dashboardChartsState.consumoChart = null;
+                    }
+                    if (dashboardChartsState.criticChart) {
+                        dashboardChartsState.criticChart.destroy();
+                        dashboardChartsState.criticChart = null;
+                    }
+                };
+
+                const renderDashboardCharts = async () => {
+                    if (!dashboardChartsEnabled.value || !dashboardChartsState.available) {
+                        destroyDashboardCharts();
+                        return;
+                    }
+
+                    await nextTick();
+                    const rows = dashboardRows.value;
+                    const monthly = Array.isArray(moduleData.dashboard?.charts?.consumo_mensal) ? moduleData.dashboard.charts.consumo_mensal : [];
+
+                    const consumoEl = document.querySelector('#dashboard-consumo-chart');
+                    const criticEl = document.querySelector('#dashboard-critic-chart');
+                    if (!consumoEl || !criticEl) return;
+
+                    destroyDashboardCharts();
+
+                    const consumoOptions = {
+                        chart: { type: 'line', height: 240, toolbar: { show: false }, foreColor: '#cbd5e1' },
+                        series: [{ name: 'Consumo', data: monthly.map(item => Number(item.consumo || 0)) }],
+                        xaxis: { categories: monthly.map(item => String(item.label || '')) },
+                        stroke: { curve: 'smooth', width: 2 },
+                        colors: ['#38bdf8'],
+                        grid: { borderColor: 'rgba(148,163,184,0.2)' }
+                    };
+
+                    const criticalRows = rows
+                        .filter(item => String(item.status_estoque || '').toUpperCase() !== 'OK')
+                        .slice(0, 10);
+
+                    const criticOptions = {
+                        chart: { type: 'bar', height: 240, stacked: false, toolbar: { show: false }, foreColor: '#cbd5e1' },
+                        series: [
+                            { name: 'Disponível', data: criticalRows.map(item => Number(item.saldo_atual || 0)) },
+                            { name: 'Ponto Ressupr.', data: criticalRows.map(item => Number(item.ponto_ressuprimento || 0)) }
+                        ],
+                        xaxis: { categories: criticalRows.map(item => String(item.codigo_ax || '-')) },
+                        colors: ['#22c55e', '#f59e0b'],
+                        grid: { borderColor: 'rgba(148,163,184,0.2)' }
+                    };
+
+                    dashboardChartsState.consumoChart = new ApexCharts(consumoEl, consumoOptions);
+                    dashboardChartsState.criticChart = new ApexCharts(criticEl, criticOptions);
+                    await dashboardChartsState.consumoChart.render();
+                    await dashboardChartsState.criticChart.render();
+                };
+
                 const loadDashboard = async () => {
                     moduleLoading.value = true;
                     try {
-                        const payload = {
-                            year: Number(dashboardFilters.year || now.getFullYear()),
-                            month: dashboardFilters.month ? Number(dashboardFilters.month) : undefined,
-                            query: String(dashboardFilters.query || '').trim()
-                        };
-                        const resp = await runGAS('getDashboardData', payload);
-                        if (resp.success === false) throw new Error(resp.message);
-                        moduleData.dashboard = resp;
+                        const payload = dashboardFilterPayload();
+                        const cacheKey = JSON.stringify(payload);
+                        const cached = getDashboardFromCache(cacheKey);
+                        if (cached) {
+                            moduleData.dashboard = cached;
+                        } else {
+                            const resp = await runGAS('getDashboardData', payload);
+                            if (resp.success === false) throw new Error(resp.message);
+                            moduleData.dashboard = resp;
+                            setDashboardCache(cacheKey, resp);
+                        }
+                        await renderDashboardCharts();
                     } finally {
                         moduleLoading.value = false;
                     }
@@ -1665,6 +1794,8 @@
                     insumosLookupCache.loaded = false;
                     insumosLookupCache.loadedAt = 0;
                     insumosLookupCache.byCodigo = {};
+                    dashboardCache.byKey = {};
+                    destroyDashboardCharts();
                     closeBulkModal();
                     closeManualModal();
                     closeInsumoModal();
@@ -1677,9 +1808,14 @@
 
                 return {
                     form,
+                    DASHBOARD_MAX_ROWS,
                     dashboardFilters,
                     dashboardYearOptions,
                     dashboardMonthOptions,
+                    dashboardChartsEnabled,
+                    dashboardChartsState,
+                    dashboardRows,
+                    dashboardRowsLimited,
                     loading,
                     moduleLoading,
                     errorMessage,

@@ -34,6 +34,9 @@ function getInsumosDataCore(filters) {
     success: true,
     data,
     period,
+    charts: {
+      consumo_mensal: buildMonthlyConsumptionSeries_(movimentos, period)
+    },
     summary: {
       total: data.length,
       criticos: data.filter(item => item.status_estoque === 'CRITICO').length,
@@ -41,6 +44,33 @@ function getInsumosDataCore(filters) {
       saudaveis: data.filter(item => item.status_estoque === 'OK').length
     }
   };
+}
+
+function buildMonthlyConsumptionSeries_(movimentos, period) {
+  const year = sanitizeNumber(period && period.year ? period.year : new Date().getFullYear());
+  const selectedMonth = period && period.month ? sanitizeNumber(period.month) : null;
+
+  const months = selectedMonth ? [selectedMonth] : Array.from({ length: 12 }, (_, idx) => idx + 1);
+  const byMonth = {};
+  months.forEach(m => {
+    byMonth[m] = 0;
+  });
+
+  movimentos.forEach(mov => {
+    if (mov.tipo !== 'SAIDA') return;
+    const dt = new Date(mov.data_iso);
+    if (Number.isNaN(dt.getTime()) || dt.getFullYear() !== year) return;
+    const month = dt.getMonth() + 1;
+    if (!Object.prototype.hasOwnProperty.call(byMonth, month)) return;
+    byMonth[month] += sanitizeNumber(mov.quantidade);
+  });
+
+  return months.map(month => ({
+    year,
+    month,
+    label: `${year}-${String(month).padStart(2, '0')}`,
+    consumo: Number(byMonth[month].toFixed(2))
+  }));
 }
 
 function enrichInsumo(insumo, movimentos, config, period) {
