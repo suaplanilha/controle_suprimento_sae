@@ -297,29 +297,52 @@
                         </template>
 
                         <template v-else-if="currentPage === 'insumos'">
-                            <div class="flex gap-3">
-                                <input v-model="insumosQuery" @input="loadInsumos" placeholder="Buscar AX ou descrição" class="flex-1 bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                            <div class="flex flex-wrap gap-3 items-center">
+                                <input v-model="insumosQuery" @input="goToInsumosPage(1)" placeholder="Buscar AX, descrição ou fornecedor" class="flex-1 min-w-[240px] bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                                <select v-model="insumosStatus" @change="goToInsumosPage(1)" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option value="ATIVO">Ativos</option>
+                                    <option value="INATIVO">Inativos</option>
+                                    <option value="">Todos</option>
+                                </select>
+                            </div>
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <p>Cadastro mestre de insumos</p>
+                                <p>Página {{ insumosTable.pagination.page }} de {{ insumosTable.pagination.totalPages }}</p>
                             </div>
                             <div class="max-h-80 overflow-auto border border-slate-700 rounded-xl">
                                 <table class="w-full text-sm">
-                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">AX</th><th class="p-2 text-left">Descrição</th><th class="p-2">Categoria</th><th class="p-2">Saldo</th><th class="p-2">Status</th></tr></thead>
+                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-left">Unid.</th><th class="p-2 text-left">Fornecedor</th><th class="p-2 text-right">Lead Time</th><th class="p-2 text-right">Est. Mínimo</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Categoria</th><th class="p-2 text-center">Status</th><th class="p-2 text-center">Ações</th></tr></thead>
                                     <tbody>
-                                        <template v-if="moduleLoading">
+                                        <template v-if="insumosTable.loading || moduleLoading">
                                             <tr v-for="n in 6" :key="`insumo-skeleton-${n}`" class="border-t border-slate-800">
-                                                <td class="p-2"><div class="h-4 rounded skeleton-shimmer"></div></td>
-                                                <td class="p-2"><div class="h-4 rounded skeleton-shimmer"></div></td>
-                                                <td class="p-2"><div class="h-4 rounded skeleton-shimmer"></div></td>
-                                                <td class="p-2"><div class="h-4 rounded skeleton-shimmer"></div></td>
-                                                <td class="p-2"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                                <td class="p-2" colspan="10"><div class="h-4 rounded skeleton-shimmer"></div></td>
                                             </tr>
                                         </template>
                                         <template v-else>
-                                            <tr v-for="item in (moduleData.insumos?.data || [])" :key="item.uuid" class="border-t border-slate-800">
-                                                <td class="p-2">{{ item.codigo_ax }}</td><td class="p-2">{{ item.descricao }}</td><td class="p-2 text-center">{{ item.categoria }}</td><td class="p-2 text-center">{{ item.saldo_atual }}</td><td class="p-2 text-center">{{ item.status_estoque }}</td>
+                                            <tr v-for="item in insumosTable.rows" :key="item.uuid" class="border-t border-slate-800">
+                                                <td class="p-2">{{ item.codigo_ax }}</td>
+                                                <td class="p-2">{{ item.descricao }}</td>
+                                                <td class="p-2">{{ item.unidade || '-' }}</td>
+                                                <td class="p-2">{{ item.fornecedor_nome || '-' }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.lead_time) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.estoque_minimo) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consenso_dias) }}</td>
+                                                <td class="p-2 text-center">{{ item.categoria || '-' }}</td>
+                                                <td class="p-2 text-center">{{ item.ativo || '-' }}</td>
+                                                <td class="p-2 text-center">
+                                                    <button class="text-xs border border-slate-600 rounded px-2 py-1 opacity-60 cursor-not-allowed" disabled>CRUD em implantação</button>
+                                                </td>
                                             </tr>
                                         </template>
                                     </tbody>
                                 </table>
+                                <p v-if="!insumosTable.rows.length && !insumosTable.loading" class="p-3 text-slate-500">Sem insumos para o filtro selecionado.</p>
+                            </div>
+                            <div class="flex items-center justify-end gap-2">
+                                <button @click="goToInsumosPage(1)" :disabled="insumosTable.loading || insumosTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Primeira</button>
+                                <button @click="goToInsumosPage(insumosTable.pagination.page - 1)" :disabled="insumosTable.loading || insumosTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
+                                <button @click="goToInsumosPage(insumosTable.pagination.page + 1)" :disabled="insumosTable.loading || insumosTable.pagination.page >= insumosTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
+                                <button @click="goToInsumosPage(insumosTable.pagination.totalPages || 1)" :disabled="insumosTable.loading || insumosTable.pagination.page >= insumosTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Última</button>
                             </div>
                         </template>
 
@@ -527,6 +550,7 @@
                 const currentPage = ref('dashboard');
                 const form = reactive({ email: '', password: '' });
                 const insumosQuery = ref('');
+                const insumosStatus = ref('ATIVO');
                 const uploadHistory = ref([]);
                 const movimentacoesTable = reactive({
                     loading: false,
@@ -535,6 +559,11 @@
                     deletingUuid: ''
                 });
                 const insumosLookupCache = reactive({ loaded: false, loading: false, loadedAt: 0, byCodigo: {} });
+                const insumosTable = reactive({
+                    loading: false,
+                    rows: [],
+                    pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 }
+                });
 
                 const createModuleState = () => ({ dashboard: null, insumos: null, compras: null });
                 const moduleData = reactive(createModuleState());
@@ -648,12 +677,29 @@
                     moduleLoading.value = false;
                 };
 
-                const loadInsumos = async () => {
+                const loadInsumos = async (page = 1) => {
                     moduleLoading.value = true;
-                    const resp = await runGAS('getInsumosData', { query: insumosQuery.value });
-                    if (resp.success === false) throw new Error(resp.message);
-                    moduleData.insumos = resp;
-                    moduleLoading.value = false;
+                    insumosTable.loading = true;
+                    try {
+                        const resp = await runGAS('listInsumos', {
+                            page,
+                            pageSize: 20,
+                            query: insumosQuery.value,
+                            status: insumosStatus.value
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        insumosTable.rows = resp.data || [];
+                        insumosTable.pagination = resp.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                        moduleData.insumos = { data: insumosTable.rows, pagination: insumosTable.pagination };
+                    } finally {
+                        insumosTable.loading = false;
+                        moduleLoading.value = false;
+                    }
+                };
+
+                const goToInsumosPage = async (page) => {
+                    const target = Math.max(1, Number(page || 1));
+                    await loadInsumos(target);
                 };
 
                 const loadCompras = async () => {
@@ -731,6 +777,11 @@
                     minimumFractionDigits: 0,
                     maximumFractionDigits: 2
                 });
+
+                const sanitizeNumberUi = (value) => {
+                    const n = Number(value || 0);
+                    return Number.isFinite(n) ? n.toLocaleString('pt-BR') : '0';
+                };
 
                 const normalizeAx = (value) => String(value || '').trim();
 
@@ -1166,6 +1217,8 @@
                     form.password = '';
                     Object.assign(moduleData, createModuleState());
                     uploadHistory.value = [];
+                    insumosTable.rows = [];
+                    insumosTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
                     movimentacoesTable.rows = [];
                     movimentacoesTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
                     movimentacoesTable.deletingUuid = '';
@@ -1189,6 +1242,8 @@
                     pageContent,
                     moduleData,
                     insumosQuery,
+                    insumosStatus,
+                    insumosTable,
                     movForm,
                     manualModal,
                     uploadHistory,
@@ -1202,6 +1257,7 @@
                     goToPage,
                     loadCurrentModule,
                     loadInsumos,
+                    goToInsumosPage,
                     submitMovimentacao,
                     openManualModal,
                     closeManualModal,
@@ -1215,6 +1271,7 @@
                     deleteMovimentacaoRow,
                     formatDateBr,
                     formatQuantityBr,
+                    sanitizeNumberUi,
                     onBulkFileChange,
                     prepareBulkUpload,
                     saveBulkUpload,
