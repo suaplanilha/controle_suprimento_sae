@@ -332,8 +332,12 @@
                                                 <td class="p-2 text-center">{{ item.ativo || '-' }}</td>
                                                 <td class="p-2 text-center">
                                                     <div class="flex items-center justify-center gap-2">
-                                                        <button @click="openInsumoEditModal(item)" class="text-xs border border-sky-600 rounded px-2 py-1 text-sky-200 hover:bg-sky-500/10">Editar</button>
-                                                        <button @click="softDeleteInsumo(item)" :disabled="insumosTable.loading" class="text-xs border border-red-600 rounded px-2 py-1 text-red-200 hover:bg-red-500/10 disabled:opacity-40">Inativar</button>
+                                                        <button @click="openInsumoEditModal(item)" class="inline-flex items-center justify-center w-8 h-8 border border-sky-600 rounded text-sky-200 hover:bg-sky-500/10" title="Editar insumo" aria-label="Editar insumo">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                                                        </button>
+                                                        <button @click="softDeleteInsumo(item)" :disabled="insumosTable.loading" class="inline-flex items-center justify-center w-8 h-8 border border-red-600 rounded text-red-200 hover:bg-red-500/10 disabled:opacity-40" title="Inativar insumo" aria-label="Inativar insumo">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -356,21 +360,52 @@
                                         <button @click="closeInsumoModal" class="text-slate-400 hover:text-white">✕</button>
                                     </div>
                                     <div class="grid md:grid-cols-2 gap-3">
-                                        <input v-model="insumoForm.codigo_ax" placeholder="Código AX" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
-                                        <input v-model="insumoForm.descricao" placeholder="Descrição" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
-                                        <input v-model="insumoForm.unidade" placeholder="Unidade" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
-                                        <select v-model="insumoForm.fornecedor_id" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
-                                            <option value="">Fornecedor (opcional)</option>
-                                            <option v-for="f in fornecedorOptions" :key="f.uuid" :value="f.uuid">{{ f.nome_fantasia }}</option>
-                                        </select>
-                                        <input v-model.number="insumoForm.lead_time" type="number" min="0" placeholder="Lead Time" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
-                                        <input v-model.number="insumoForm.estoque_minimo" type="number" min="0" placeholder="Estoque Mínimo" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
-                                        <input v-model.number="insumoForm.consenso_dias" type="number" min="0" placeholder="Consenso Dias" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
-                                        <select v-model="insumoForm.categoria" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
-                                            <option value="A">Categoria A</option>
-                                            <option value="B">Categoria B</option>
-                                            <option value="C">Categoria C</option>
-                                        </select>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Código AX</span>
+                                            <input v-model="insumoForm.codigo_ax" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Descrição</span>
+                                            <input v-model="insumoForm.descricao" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Unidade</span>
+                                            <select v-model="insumoForm.unidade" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                                <option value="UN">UN</option>
+                                                <option value="KG">KG</option>
+                                                <option value="CX">CX</option>
+                                                <option value="M">M</option>
+                                                <option value="L">L</option>
+                                                <option value="PC">PC</option>
+                                            </select>
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Fornecedor (opcional)</span>
+                                            <select v-model="insumoForm.fornecedor_id" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                                <option value="">Selecionar fornecedor</option>
+                                                <option v-for="f in fornecedorOptions" :key="f.uuid" :value="f.uuid">{{ f.nome_fantasia }}</option>
+                                            </select>
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Lead Time</span>
+                                            <input v-model.number="insumoForm.lead_time" type="number" min="0" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Estoque Mínimo</span>
+                                            <input v-model.number="insumoForm.estoque_minimo" type="number" min="0" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Consenso Dias</span>
+                                            <input v-model.number="insumoForm.consenso_dias" type="number" min="0" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Categoria</span>
+                                            <select v-model="insumoForm.categoria" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                                <option value="A">Categoria A</option>
+                                                <option value="B">Categoria B</option>
+                                                <option value="C">Categoria C</option>
+                                            </select>
+                                        </label>
                                     </div>
                                     <div class="flex justify-end gap-2">
                                         <button @click="closeInsumoModal" class="border border-slate-600 rounded-xl px-4 py-2">Cancelar</button>
@@ -605,9 +640,9 @@
                     descricao: '',
                     unidade: 'UN',
                     fornecedor_id: '',
-                    lead_time: 0,
-                    estoque_minimo: 0,
-                    consenso_dias: 0,
+                    lead_time: '',
+                    estoque_minimo: '',
+                    consenso_dias: '',
                     categoria: 'C'
                 });
                 const insumoForm = reactive(createInsumoFormState());
