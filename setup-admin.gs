@@ -124,6 +124,14 @@ function test_runAllCalculations() {
       throw new Error(`Teste ponto_ressuprimento falhou: esperado ${expectedPR}, obtido ${enriched.ponto_ressuprimento}`);
     }
 
+    if (Number(enriched.consumo_mes_atual) !== 80) {
+      throw new Error(`Teste consumo_mes_atual falhou: esperado 80, obtido ${enriched.consumo_mes_atual}`);
+    }
+
+    if (enriched.meses_estimados_consumo === null || !Number.isFinite(Number(enriched.meses_estimados_consumo))) {
+      throw new Error('Teste meses_estimados_consumo falhou: valor inválido.');
+    }
+
     if (!Number.isFinite(order.sugestao_compra)) {
       throw new Error('Teste motor de ressuprimento falhou: sugestao_compra inválida.');
     }

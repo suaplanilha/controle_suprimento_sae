@@ -91,7 +91,7 @@ function getDashboardDataService_(filters) {
     saeLog_('DEBUG', 'getDashboardData chamado', { filters: sanitizeForLog_(filters) });
     const insumosResult = getInsumosDataCore(filters || {});
     saeLog_('DEBUG', 'getDashboardData resumo', {
-      total: insumosResult && insumosResult.summary ? insumosResult.summary.total_insumos : 0,
+      total: insumosResult && insumosResult.summary ? insumosResult.summary.total : 0,
       criticos: insumosResult && insumosResult.summary ? insumosResult.summary.criticos : 0
     });
     return {

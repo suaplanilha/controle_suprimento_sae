@@ -10,6 +10,7 @@ function getInsumosDataCore(filters) {
   const insumos = readTable(SAE_TABLES.INSUMOS).filter(row => String(row.ativo || 'ATIVO').toUpperCase() !== 'INATIVO');
   const movimentos = readTable(SAE_TABLES.MOVIMENTACOES).map(sanitizeMovementRow);
   const configs = readConfigMap();
+  const period = resolveAnalyticsPeriod_(safeFilters);
 
   const diasUteis = sanitizeNumber(configs.dias_uteis_mes || 25);
   const janelaMeses = sanitizeNumber(configs.janela_media_meses || 12);
@@ -20,7 +21,7 @@ function getInsumosDataCore(filters) {
 
   const data = insumos
     .map(insumo => {
-      const enriched = enrichInsumo(insumo, movimentos, { diasUteis, janelaMeses, tratarMesSemMovimentoComoZero });
+      const enriched = enrichInsumo(insumo, movimentos, { diasUteis, janelaMeses, tratarMesSemMovimentoComoZero }, period);
       return {
         ...enriched,
         categoria: abcMap[insumo.uuid] || enriched.categoria || 'C'
@@ -32,6 +33,7 @@ function getInsumosDataCore(filters) {
   return {
     success: true,
     data,
+    period,
     summary: {
       total: data.length,
       criticos: data.filter(item => item.status_estoque === 'CRITICO').length,
@@ -41,7 +43,7 @@ function getInsumosDataCore(filters) {
   };
 }
 
-function enrichInsumo(insumo, movimentos, config) {
+function enrichInsumo(insumo, movimentos, config, period) {
   const movs = movimentos.filter(m => m.insumo_id === insumo.uuid);
 
   const saldo = movs.reduce((acc, mov) => {
@@ -62,16 +64,59 @@ function enrichInsumo(insumo, movimentos, config) {
   };
 
   const orderPoint = calculateOrderPoint(withMetrics);
+  const consumoMesAtual = calculatePeriodConsumption(movs, {
+    year: new Date().getFullYear(),
+    month: new Date().getMonth() + 1
+  });
+  const consumoPeriodo = calculatePeriodConsumption(movs, period);
+  const mesesEstimadosConsumo = orderPoint.dias_estimados_consumo === null
+    ? null
+    : Number((Number(orderPoint.dias_estimados_consumo) / 30).toFixed(2));
 
   return {
     ...withMetrics,
     ponto_ressuprimento: orderPoint.ponto_ressuprimento,
     sugestao_compra: orderPoint.sugestao_compra,
     data_estimada_ruptura: orderPoint.data_estimada_ruptura,
+    consumo_mes_atual: Number(consumoMesAtual.toFixed(2)),
+    consumo_periodo: Number(consumoPeriodo.toFixed(2)),
     dias_estimados_consumo: orderPoint.dias_estimados_consumo,
+    meses_estimados_consumo: mesesEstimadosConsumo,
     giro_estoque: consumoMensal > 0 ? Number((saldo / consumoMensal).toFixed(2)) : 0,
     status_estoque: computeStatus(saldo, orderPoint.ponto_ressuprimento)
   };
+}
+
+function resolveAnalyticsPeriod_(filters) {
+  const now = new Date();
+  const year = sanitizeNumber(filters && filters.year ? filters.year : now.getFullYear());
+  const monthRaw = filters && filters.month !== undefined && filters.month !== null && filters.month !== ''
+    ? sanitizeNumber(filters.month)
+    : null;
+
+  if (monthRaw !== null && (monthRaw < 1 || monthRaw > 12)) {
+    throw new Error('Filtro month inválido. Use valores de 1 a 12.');
+  }
+
+  return {
+    year,
+    month: monthRaw
+  };
+}
+
+function calculatePeriodConsumption(movs, period) {
+  const safe = period || {};
+  const year = sanitizeNumber(safe.year);
+  const month = safe.month === null || safe.month === undefined || safe.month === '' ? null : sanitizeNumber(safe.month);
+
+  return movs.reduce((acc, mov) => {
+    if (mov.tipo !== 'SAIDA') return acc;
+    const dt = new Date(mov.data_iso);
+    if (Number.isNaN(dt.getTime())) return acc;
+    if (dt.getFullYear() !== year) return acc;
+    if (month !== null && (dt.getMonth() + 1) !== month) return acc;
+    return acc + sanitizeNumber(mov.quantidade);
+  }, 0);
 }
 
 function calculateOrderPoint(insumo) {
@@ -251,4 +296,3 @@ function getExecutiveSummary(filters) {
     };
   });
 }
-
