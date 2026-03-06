@@ -99,6 +99,7 @@ function enrichInsumo(insumo, movimentos, config, period) {
     month: new Date().getMonth() + 1
   });
   const consumoPeriodo = calculatePeriodConsumption(movs, period);
+  const ultimaMovimentacaoPeriodo = getLastMovementInPeriod_(movs, period);
   const mesesEstimadosConsumo = orderPoint.dias_estimados_consumo === null
     ? null
     : Number((Number(orderPoint.dias_estimados_consumo) / 30).toFixed(2));
@@ -110,11 +111,28 @@ function enrichInsumo(insumo, movimentos, config, period) {
     data_estimada_ruptura: orderPoint.data_estimada_ruptura,
     consumo_mes_atual: Number(consumoMesAtual.toFixed(2)),
     consumo_periodo: Number(consumoPeriodo.toFixed(2)),
+    ultima_movimentacao_periodo: ultimaMovimentacaoPeriodo,
     dias_estimados_consumo: orderPoint.dias_estimados_consumo,
     meses_estimados_consumo: mesesEstimadosConsumo,
     giro_estoque: consumoMensal > 0 ? Number((saldo / consumoMensal).toFixed(2)) : 0,
     status_estoque: computeStatus(saldo, orderPoint.ponto_ressuprimento)
   };
+}
+
+function getLastMovementInPeriod_(movs, period) {
+  const safe = period || {};
+  const year = sanitizeNumber(safe.year);
+  const month = safe.month === null || safe.month === undefined || safe.month === '' ? null : sanitizeNumber(safe.month);
+
+  const matches = movs
+    .map(mov => new Date(mov.data_iso))
+    .filter(dt => !Number.isNaN(dt.getTime()))
+    .filter(dt => dt.getFullYear() === year)
+    .filter(dt => month === null || (dt.getMonth() + 1) === month)
+    .sort((a, b) => b.getTime() - a.getTime());
+
+  if (!matches.length) return null;
+  return matches[0].toISOString();
 }
 
 function resolveMovimentosForInsumo_(insumo, movimentos) {

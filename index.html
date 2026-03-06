@@ -325,9 +325,9 @@
                                 </div>
                             </div>
                             <p v-if="dashboardRowsLimited" class="text-xs text-amber-300 border border-amber-600/40 rounded-xl px-3 py-2">Exibindo os primeiros {{ DASHBOARD_MAX_ROWS }} itens para preservar performance. Refine os filtros para análise detalhada.</p>
-                            <div class="max-h-96 overflow-auto border border-slate-700 rounded-xl">
+                            <div class="max-h-96 overflow-auto scroll-invisible border border-slate-700 rounded-xl">
                                 <table class="w-full text-sm">
-                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-right">Consumo no Período</th><th class="p-2 text-right">Disponível Hoje</th><th class="p-2 text-right">Ponto Ressupr.</th><th class="p-2 text-right">Dias Estimados</th><th class="p-2 text-right">Meses Estimados</th><th class="p-2 text-right">Média Mensal</th><th class="p-2 text-right">Lead Time</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Status</th></tr></thead>
+                                    <thead class="bg-slate-900/60 text-slate-300 text-[11px]"><tr><th class="p-2 text-left">Insumo</th><th class="p-2 text-right">Consumo Período</th><th class="p-2 text-right">Últ. Mov. Período</th><th class="p-2 text-right">Disponível</th><th class="p-2 text-right">Pto. Ressupr.</th><th class="p-2 text-right">Dias</th><th class="p-2 text-right">Meses</th><th class="p-2 text-right">Média Mensal</th><th class="p-2 text-right">Lead</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Status</th></tr></thead>
                                     <tbody>
                                         <template v-if="moduleLoading">
                                             <tr v-for="n in 8" :key="`dash-kpi-skeleton-${n}`" class="border-t border-slate-800">
@@ -335,11 +335,16 @@
                                             </tr>
                                         </template>
                                         <template v-else>
-                                            <tr v-for="item in dashboardRows" :key="item.uuid" class="border-t border-slate-800">
-                                                <td class="p-2">{{ item.codigo_ax || '-' }}</td>
-                                                <td class="p-2">{{ item.descricao || '-' }}</td>
-                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consumo_periodo) }}</td>
-                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.saldo_atual) }}</td>
+                                            <tr v-for="item in dashboardRows" :key="item.uuid" class="border-t border-slate-800 transition-colors hover:bg-slate-800/35">
+                                                <td class="p-2">
+                                                    <div class="flex items-center gap-2 min-w-[230px]">
+                                                        <span class="text-[11px] px-2 py-1 rounded-full bg-amber-400/20 text-amber-200 border border-amber-500/40">{{ item.codigo_ax || '-' }}</span>
+                                                        <span class="truncate">{{ item.descricao || '-' }}</span>
+                                                    </div>
+                                                </td>
+                                                <td class="p-2 text-right"><span class="px-2 py-1 rounded-full text-xs" :class="signedBadgeClass(item.consumo_periodo)">{{ sanitizeNumberUi(item.consumo_periodo) }}</span></td>
+                                                <td class="p-2 text-right text-xs text-slate-300">{{ formatDateOnlyBr(item.ultima_movimentacao_periodo) }}</td>
+                                                <td class="p-2 text-right"><span class="px-2 py-1 rounded-full text-xs" :class="signedBadgeClass(item.saldo_atual)">{{ sanitizeNumberUi(item.saldo_atual) }}</span></td>
                                                 <td class="p-2 text-right">{{ sanitizeNumberUi(item.ponto_ressuprimento) }}</td>
                                                 <td class="p-2 text-right">{{ item.dias_estimados_consumo === null ? '-' : sanitizeNumberUi(item.dias_estimados_consumo) }}</td>
                                                 <td class="p-2 text-right">{{ item.meses_estimados_consumo === null ? '-' : sanitizeNumberUi(item.meses_estimados_consumo) }}</td>
@@ -354,6 +359,33 @@
                                     </tbody>
                                 </table>
                                 <p v-if="!moduleLoading && !dashboardRows.length" class="p-3 text-slate-500">Sem consumo no período/filtros selecionados.</p>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex items-center justify-between text-xs text-slate-400">
+                                    <p>Controle operacional: insumos com data estimada de ruptura</p>
+                                    <p>{{ dashboardRupturaRows.length }} itens</p>
+                                </div>
+                                <div class="max-h-64 overflow-auto scroll-invisible border border-slate-700 rounded-xl">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-slate-900/60 text-slate-300 text-[11px]"><tr><th class="p-2 text-left">Insumo</th><th class="p-2 text-right">Ruptura Estimada</th><th class="p-2 text-right">Dias</th><th class="p-2 text-right">Lead</th><th class="p-2 text-right">Sug. Compra</th><th class="p-2 text-center">Ação</th></tr></thead>
+                                        <tbody>
+                                            <tr v-for="item in dashboardRupturaRows" :key="`ruptura-${item.uuid}`" class="border-t border-slate-800 transition-colors hover:bg-slate-800/35">
+                                                <td class="p-2">
+                                                    <div class="flex items-center gap-2 min-w-[230px]">
+                                                        <span class="text-[11px] px-2 py-1 rounded-full bg-amber-400/20 text-amber-200 border border-amber-500/40">{{ item.codigo_ax || '-' }}</span>
+                                                        <span class="truncate">{{ item.descricao || '-' }}</span>
+                                                    </div>
+                                                </td>
+                                                <td class="p-2 text-right text-xs text-slate-300">{{ formatDateOnlyBr(item.data_estimada_ruptura) }}</td>
+                                                <td class="p-2 text-right">{{ item.dias_estimados_consumo === null ? '-' : sanitizeNumberUi(item.dias_estimados_consumo) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.lead_time) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.sugestao_compra) }}</td>
+                                                <td class="p-2 text-center"><span class="text-[11px] font-semibold px-2 py-1 rounded-full" :class="Number(item.lead_time || 0) > Number(item.dias_estimados_consumo || 0) ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'">{{ Number(item.lead_time || 0) > Number(item.dias_estimados_consumo || 0) ? 'Comprar já' : 'Monitorar' }}</span></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <p v-if="!dashboardRupturaRows.length" class="p-3 text-slate-500 text-xs">Sem insumos com data estimada de ruptura para o período.</p>
+                                </div>
                             </div>
                             <p class="text-slate-300">{{ pageContent[currentPage] }}</p>
                         </template>
@@ -883,6 +915,17 @@
                     const rows = Array.isArray(moduleData.dashboard?.data) ? moduleData.dashboard.data : [];
                     return rows.length > DASHBOARD_MAX_ROWS;
                 });
+                const dashboardRupturaRows = computed(() => {
+                    return dashboardRows.value
+                        .filter(item => !!item.data_estimada_ruptura)
+                        .slice()
+                        .sort((a, b) => {
+                            const da = new Date(a.data_estimada_ruptura).getTime();
+                            const db = new Date(b.data_estimada_ruptura).getTime();
+                            return da - db;
+                        })
+                        .slice(0, 15);
+                });
 
                 const refreshIcons = async () => {
                     await nextTick();
@@ -1052,10 +1095,12 @@
                             moduleData.dashboard = resp;
                             setDashboardCache(cacheKey, resp);
                         }
-                        await renderDashboardCharts();
                     } finally {
                         moduleLoading.value = false;
                     }
+
+                    await nextTick();
+                    await renderDashboardCharts();
                 };
 
                 const applyDashboardFilters = async () => {
@@ -1334,6 +1379,12 @@
                     return dt.toLocaleString('pt-BR');
                 };
 
+                const formatDateOnlyBr = (isoValue) => {
+                    const dt = new Date(isoValue);
+                    if (Number.isNaN(dt.getTime())) return '-';
+                    return dt.toLocaleDateString('pt-BR');
+                };
+
                 const formatQuantityBr = (value) => Number(value || 0).toLocaleString('pt-BR', {
                     minimumFractionDigits: 0,
                     maximumFractionDigits: 2
@@ -1342,6 +1393,14 @@
                 const sanitizeNumberUi = (value) => {
                     const n = Number(value || 0);
                     return Number.isFinite(n) ? n.toLocaleString('pt-BR') : '0';
+                };
+
+                const signedBadgeClass = (value) => {
+                    const n = Number(value || 0);
+                    if (!Number.isFinite(n)) return 'bg-slate-700/40 text-slate-200';
+                    if (n < 0) return 'bg-red-500/20 text-red-200 border border-red-500/40';
+                    if (n > 0) return 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40';
+                    return 'bg-slate-700/40 text-slate-200 border border-slate-600/40';
                 };
 
                 const normalizeAx = (value) => String(value || '').trim();
@@ -1816,6 +1875,7 @@
                     dashboardChartsState,
                     dashboardRows,
                     dashboardRowsLimited,
+                    dashboardRupturaRows,
                     loading,
                     moduleLoading,
                     errorMessage,
@@ -1873,8 +1933,10 @@
                     goToMovimentacoesLastPage,
                     deleteMovimentacaoRow,
                     formatDateBr,
+                    formatDateOnlyBr,
                     formatQuantityBr,
                     sanitizeNumberUi,
+                    signedBadgeClass,
                     onBulkFileChange,
                     prepareBulkUpload,
                     saveBulkUpload,
