@@ -14,6 +14,8 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- SheetJS para leitura de Excel (.xls/.xlsx) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- ApexCharts para gráficos do dashboard (opcional) -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 
     <style>
         :root {
@@ -28,7 +30,7 @@
             font-family: 'Inter', sans-serif;
             background-color: var(--azul-escuro);
             color: #f8fafc;
-            overflow: hidden;
+            overflow: auto;
         }
 
         /* Animação de fundo flutuante */
@@ -58,7 +60,7 @@
         .side-image {
             background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
             position: relative;
-            overflow: hidden;
+            overflow: auto;
         }
 
         /* Overlay de Suprimentos/Estoque */
@@ -119,9 +121,41 @@
             filter: brightness(1.1);
         }
 
+
+        .skeleton-shimmer {
+            position: relative;
+            overflow: hidden;
+            background: rgba(51, 65, 85, 0.5);
+        }
+
+        .skeleton-shimmer::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.18), transparent);
+            animation: skeleton-shimmer 1.2s infinite;
+        }
+
+        @keyframes skeleton-shimmer {
+            100% { transform: translateX(100%); }
+        }
+
         @media (max-width: 768px) {
             .side-content { display: none; }
             .login-container { grid-template-columns: 1fr; }
+        }
+
+
+        .scroll-invisible {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .scroll-invisible::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+            display: none;
         }
 
         .animate-slide-up {
@@ -135,7 +169,7 @@
     </style>
 </head>
 <body>
-    <div id="app" class="min-h-screen bg-slate-950 text-slate-100">
+    <div id="app" class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
         <template v-if="!isAuthenticated">
             <div class="min-h-screen flex items-center justify-center p-4 relative">
                 <div class="bg-blob"></div>
@@ -213,7 +247,7 @@
         </template>
 
         <template v-else>
-            <div class="min-h-screen flex">
+            <div class="flex-1 min-h-0 flex">
                 <aside class="w-72 border-r border-slate-800 bg-slate-900/70 p-6 flex flex-col">
                     <h1 class="text-xl font-black text-sky-400 uppercase mb-1">Suprimentos</h1>
                     <p class="text-xs text-slate-500 mb-8">Enterprise System v2.0</p>
@@ -234,7 +268,7 @@
                     <button @click="logout" class="mt-6 w-full border border-slate-700 text-slate-200 hover:bg-slate-800/50 font-semibold py-3 rounded-2xl">Sair</button>
                 </aside>
 
-                <main class="flex-1 p-8 md:p-10">
+                <main class="flex-1 p-8 md:p-10 overflow-y-auto scroll-invisible">
                     <div class="mb-8 flex items-center justify-between">
                         <div>
                             <h2 class="text-3xl font-bold text-white">Olá, {{ session.user.nome }}</h2>
@@ -250,49 +284,316 @@
                             <button @click="loadCurrentModule" class="text-xs px-3 py-2 rounded-lg border border-slate-600 text-slate-200 hover:bg-slate-800/50">Atualizar</button>
                         </div>
 
-                        <template v-if="moduleLoading">
+                        <template v-if="moduleLoading && !['insumos', 'movimentacoes'].includes(currentPage)">
                             <p class="text-slate-400">Carregando dados do módulo...</p>
                         </template>
 
                         <template v-else-if="currentPage === 'dashboard'">
+                            <div class="flex flex-wrap gap-3 items-center">
+                                <select v-model="dashboardFilters.year" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option v-for="year in dashboardYearOptions" :key="`dashboard-year-${year}`" :value="year">{{ year }}</option>
+                                </select>
+                                <select v-model="dashboardFilters.month" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option value="">Todos os meses</option>
+                                    <option v-for="month in dashboardMonthOptions" :key="`dashboard-month-${month.value}`" :value="month.value">{{ month.label }}</option>
+                                </select>
+                                <input v-model="dashboardFilters.query" placeholder="Buscar AX ou descrição" class="flex-1 min-w-[240px] bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                                <button @click="applyDashboardFilters" :disabled="moduleLoading" class="btn-primary rounded-xl px-4 py-2 text-sm disabled:opacity-50">Atualizar KPIs</button>
+                            </div>
                             <div class="grid md:grid-cols-4 gap-4">
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Total Itens</p><p class="text-2xl font-bold">{{ moduleData.dashboard?.summary?.total ?? '-' }}</p></div>
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Críticos</p><p class="text-2xl font-bold text-red-300">{{ moduleData.dashboard?.summary?.criticos ?? '-' }}</p></div>
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Em Alerta</p><p class="text-2xl font-bold text-amber-300">{{ moduleData.dashboard?.summary?.em_alerta ?? '-' }}</p></div>
                                 <div class="p-4 rounded-xl bg-slate-800/50 border border-slate-700"><p class="text-xs text-slate-400">Saudáveis</p><p class="text-2xl font-bold text-emerald-300">{{ moduleData.dashboard?.summary?.saudaveis ?? '-' }}</p></div>
                             </div>
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <p>Visualização gráfica opcional para leitura gerencial.</p>
+                                <label class="inline-flex items-center gap-2 cursor-pointer">
+                                    <input v-model="dashboardChartsEnabled" @change="applyDashboardFilters" type="checkbox" class="rounded border-slate-600 bg-slate-900/50" />
+                                    <span>Habilitar gráficos</span>
+                                </label>
+                            </div>
+                            <p v-if="dashboardChartsEnabled && !dashboardChartsState.available" class="text-xs text-amber-300 border border-amber-600/40 rounded-xl px-3 py-2">ApexCharts indisponível no ambiente atual. Mantendo cards e tabela como fallback.</p>
+                            <div v-if="dashboardChartsEnabled && dashboardChartsState.available" class="grid md:grid-cols-2 gap-4">
+                                <div class="border border-slate-700 rounded-xl p-3">
+                                    <p class="text-xs uppercase text-slate-500 mb-2">Série temporal de consumo (SAÍDA)</p>
+                                    <div id="dashboard-consumo-chart" class="min-h-[240px]"></div>
+                                </div>
+                                <div class="border border-slate-700 rounded-xl p-3">
+                                    <p class="text-xs uppercase text-slate-500 mb-2">Disponível hoje x Ponto de ressuprimento (Top críticos)</p>
+                                    <div id="dashboard-critic-chart" class="min-h-[240px]"></div>
+                                </div>
+                            </div>
+                            <p v-if="dashboardRowsLimited" class="text-xs text-amber-300 border border-amber-600/40 rounded-xl px-3 py-2">Exibindo os primeiros {{ DASHBOARD_MAX_ROWS }} itens para preservar performance. Refine os filtros para análise detalhada.</p>
+                            <div class="max-h-96 overflow-auto scroll-invisible border border-slate-700 rounded-xl">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-slate-900/60 text-slate-300 text-[11px]"><tr><th class="p-2 text-left">Insumo</th><th class="p-2 text-right">Consumo Período</th><th class="p-2 text-right">Últ. Mov. Período</th><th class="p-2 text-right">Disponível</th><th class="p-2 text-right">Pto. Ressupr.</th><th class="p-2 text-right">Dias</th><th class="p-2 text-right">Meses</th><th class="p-2 text-right">Média Mensal</th><th class="p-2 text-right">Lead</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Status</th></tr></thead>
+                                    <tbody>
+                                        <template v-if="moduleLoading">
+                                            <tr v-for="n in 8" :key="`dash-kpi-skeleton-${n}`" class="border-t border-slate-800">
+                                                <td class="p-2" colspan="11"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                            </tr>
+                                        </template>
+                                        <template v-else>
+                                            <tr v-for="item in dashboardRows" :key="item.uuid" class="border-t border-slate-800 transition-colors hover:bg-slate-800/35">
+                                                <td class="p-2">
+                                                    <div class="flex items-center gap-2 min-w-[230px]">
+                                                        <span class="text-[11px] px-2 py-1 rounded-full bg-amber-400/20 text-amber-200 border border-amber-500/40">{{ item.codigo_ax || '-' }}</span>
+                                                        <span class="truncate">{{ item.descricao || '-' }}</span>
+                                                    </div>
+                                                </td>
+                                                <td class="p-2 text-right"><span class="px-2 py-1 rounded-full text-xs" :class="signedBadgeClass(item.consumo_periodo)">{{ sanitizeNumberUi(item.consumo_periodo) }}</span></td>
+                                                <td class="p-2 text-right text-xs text-slate-300">{{ formatDateOnlyBr(item.ultima_movimentacao_periodo) }}</td>
+                                                <td class="p-2 text-right"><span class="px-2 py-1 rounded-full text-xs" :class="signedBadgeClass(item.saldo_atual)">{{ sanitizeNumberUi(item.saldo_atual) }}</span></td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.ponto_ressuprimento) }}</td>
+                                                <td class="p-2 text-right">{{ item.dias_estimados_consumo === null ? '-' : sanitizeNumberUi(item.dias_estimados_consumo) }}</td>
+                                                <td class="p-2 text-right">{{ item.meses_estimados_consumo === null ? '-' : sanitizeNumberUi(item.meses_estimados_consumo) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consumo_medio_mensal) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.lead_time) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consenso_dias) }}</td>
+                                                <td class="p-2 text-center">
+                                                    <span class="text-[11px] font-semibold px-2 py-1 rounded-full" :class="item.status_estoque === 'CRITICO' ? 'bg-red-500/20 text-red-300' : (item.status_estoque === 'ALERTA' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300')">{{ item.status_estoque || '-' }}</span>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p v-if="!moduleLoading && !dashboardRows.length" class="p-3 text-slate-500">Sem consumo no período/filtros selecionados.</p>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex items-center justify-between text-xs text-slate-400">
+                                    <p>Controle operacional: insumos com data estimada de ruptura</p>
+                                    <p>{{ dashboardRupturaRows.length }} itens</p>
+                                </div>
+                                <div class="max-h-64 overflow-auto scroll-invisible border border-slate-700 rounded-xl">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-slate-900/60 text-slate-300 text-[11px]"><tr><th class="p-2 text-left">Insumo</th><th class="p-2 text-right">Ruptura Estimada</th><th class="p-2 text-right">Dias</th><th class="p-2 text-right">Lead</th><th class="p-2 text-right">Sug. Compra</th><th class="p-2 text-center">Ação</th></tr></thead>
+                                        <tbody>
+                                            <tr v-for="item in dashboardRupturaRows" :key="`ruptura-${item.uuid}`" class="border-t border-slate-800 transition-colors hover:bg-slate-800/35">
+                                                <td class="p-2">
+                                                    <div class="flex items-center gap-2 min-w-[230px]">
+                                                        <span class="text-[11px] px-2 py-1 rounded-full bg-amber-400/20 text-amber-200 border border-amber-500/40">{{ item.codigo_ax || '-' }}</span>
+                                                        <span class="truncate">{{ item.descricao || '-' }}</span>
+                                                    </div>
+                                                </td>
+                                                <td class="p-2 text-right text-xs text-slate-300">{{ formatDateOnlyBr(item.data_estimada_ruptura) }}</td>
+                                                <td class="p-2 text-right">{{ item.dias_estimados_consumo === null ? '-' : sanitizeNumberUi(item.dias_estimados_consumo) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.lead_time) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.sugestao_compra) }}</td>
+                                                <td class="p-2 text-center"><span class="text-[11px] font-semibold px-2 py-1 rounded-full" :class="Number(item.lead_time || 0) > Number(item.dias_estimados_consumo || 0) ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'">{{ Number(item.lead_time || 0) > Number(item.dias_estimados_consumo || 0) ? 'Comprar já' : 'Monitorar' }}</span></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <p v-if="!dashboardRupturaRows.length" class="p-3 text-slate-500 text-xs">Sem insumos com data estimada de ruptura para o período.</p>
+                                </div>
+                            </div>
                             <p class="text-slate-300">{{ pageContent[currentPage] }}</p>
                         </template>
 
                         <template v-else-if="currentPage === 'insumos'">
-                            <div class="flex gap-3">
-                                <input v-model="insumosQuery" @input="loadInsumos" placeholder="Buscar AX ou descrição" class="flex-1 bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                            <div class="flex flex-wrap gap-3 items-center">
+                                <input v-model="insumosQuery" @input="goToInsumosPage(1)" placeholder="Buscar AX, descrição ou fornecedor" class="flex-1 min-w-[240px] bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                                <select v-model="insumosStatus" @change="goToInsumosPage(1)" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option value="ATIVO">Ativos</option>
+                                    <option value="INATIVO">Inativos</option>
+                                    <option value="">Todos</option>
+                                </select>
+                                <button @click="openInsumoCreateModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Novo Insumo</button>
+                            </div>
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <p>Cadastro mestre de insumos</p>
+                                <p>Página {{ insumosTable.pagination.page }} de {{ insumosTable.pagination.totalPages }}</p>
                             </div>
                             <div class="max-h-80 overflow-auto border border-slate-700 rounded-xl">
                                 <table class="w-full text-sm">
-                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">AX</th><th class="p-2 text-left">Descrição</th><th class="p-2">Categoria</th><th class="p-2">Saldo</th><th class="p-2">Status</th></tr></thead>
+                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-left">Unid.</th><th class="p-2 text-left">Fornecedor</th><th class="p-2 text-right">Lead Time</th><th class="p-2 text-right">Est. Mínimo</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Categoria</th><th class="p-2 text-center">Status</th><th class="p-2 text-center">Ações</th></tr></thead>
                                     <tbody>
-                                        <tr v-for="item in (moduleData.insumos?.data || [])" :key="item.uuid" class="border-t border-slate-800">
-                                            <td class="p-2">{{ item.codigo_ax }}</td><td class="p-2">{{ item.descricao }}</td><td class="p-2 text-center">{{ item.categoria }}</td><td class="p-2 text-center">{{ item.saldo_atual }}</td><td class="p-2 text-center">{{ item.status_estoque }}</td>
-                                        </tr>
+                                        <template v-if="insumosTable.loading || moduleLoading">
+                                            <tr v-for="n in 6" :key="`insumo-skeleton-${n}`" class="border-t border-slate-800">
+                                                <td class="p-2" colspan="10"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                            </tr>
+                                        </template>
+                                        <template v-else>
+                                            <tr v-for="item in insumosTable.rows" :key="item.uuid" class="border-t border-slate-800">
+                                                <td class="p-2">{{ item.codigo_ax }}</td>
+                                                <td class="p-2">{{ item.descricao }}</td>
+                                                <td class="p-2">{{ item.unidade || '-' }}</td>
+                                                <td class="p-2">{{ item.fornecedor_nome || '-' }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.lead_time) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.estoque_minimo) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consenso_dias) }}</td>
+                                                <td class="p-2 text-center">{{ item.categoria || '-' }}</td>
+                                                <td class="p-2 text-center">{{ item.ativo || '-' }}</td>
+                                                <td class="p-2 text-center">
+                                                    <div class="flex items-center justify-center gap-2">
+                                                        <button @click="openInsumoEditModal(item)" class="inline-flex items-center justify-center w-8 h-8 border border-sky-600 rounded text-sky-200 hover:bg-sky-500/10" title="Editar insumo" aria-label="Editar insumo">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                                                        </button>
+                                                        <button @click="softDeleteInsumo(item)" :disabled="insumosTable.loading" class="inline-flex items-center justify-center w-8 h-8 border border-red-600 rounded text-red-200 hover:bg-red-500/10 disabled:opacity-40" title="Inativar insumo" aria-label="Inativar insumo">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
                                     </tbody>
                                 </table>
+                                <p v-if="!insumosTable.rows.length && !insumosTable.loading" class="p-3 text-slate-500">Sem insumos para o filtro selecionado.</p>
+                            </div>
+                            <div class="flex items-center justify-end gap-2">
+                                <button @click="goToInsumosPage(1)" :disabled="insumosTable.loading || insumosTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Primeira</button>
+                                <button @click="goToInsumosPage(insumosTable.pagination.page - 1)" :disabled="insumosTable.loading || insumosTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
+                                <button @click="goToInsumosPage(insumosTable.pagination.page + 1)" :disabled="insumosTable.loading || insumosTable.pagination.page >= insumosTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
+                                <button @click="goToInsumosPage(insumosTable.pagination.totalPages || 1)" :disabled="insumosTable.loading || insumosTable.pagination.page >= insumosTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Última</button>
+                            </div>
+
+                            <div v-if="insumoModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div class="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-lg font-semibold">{{ insumoModal.mode === 'create' ? 'Cadastrar Insumo' : 'Editar Insumo' }}</h4>
+                                        <button @click="closeInsumoModal" class="text-slate-400 hover:text-white">✕</button>
+                                    </div>
+                                    <div class="grid md:grid-cols-2 gap-3">
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Código AX</span>
+                                            <input v-model="insumoForm.codigo_ax" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Descrição</span>
+                                            <input v-model="insumoForm.descricao" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Unidade</span>
+                                            <select v-model="insumoForm.unidade" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                                <option value="UN">UN</option>
+                                                <option value="KG">KG</option>
+                                                <option value="CX">CX</option>
+                                                <option value="M">M</option>
+                                                <option value="L">L</option>
+                                                <option value="PC">PC</option>
+                                            </select>
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Fornecedor (opcional)</span>
+                                            <select v-model="insumoForm.fornecedor_id" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                                <option value="">Selecionar fornecedor</option>
+                                                <option v-for="f in fornecedorOptions" :key="f.uuid" :value="f.uuid">{{ f.nome_fantasia }}</option>
+                                            </select>
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Lead Time</span>
+                                            <input v-model.number="insumoForm.lead_time" type="number" min="0" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Estoque Mínimo</span>
+                                            <input v-model.number="insumoForm.estoque_minimo" type="number" min="0" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Consenso Dias</span>
+                                            <input v-model.number="insumoForm.consenso_dias" type="number" min="0" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" />
+                                        </label>
+                                        <label class="space-y-1 text-sm">
+                                            <span class="text-slate-300">Categoria</span>
+                                            <select v-model="insumoForm.categoria" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                                <option value="A">Categoria A</option>
+                                                <option value="B">Categoria B</option>
+                                                <option value="C">Categoria C</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div class="flex justify-end gap-2">
+                                        <button @click="closeInsumoModal" class="border border-slate-600 rounded-xl px-4 py-2">Cancelar</button>
+                                        <button @click="saveInsumoForm" :disabled="insumoModal.loading" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">{{ insumoModal.loading ? 'Salvando...' : 'Salvar' }}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template v-else-if="currentPage === 'fornecedores'">
+                            <div class="flex flex-wrap gap-3 items-center">
+                                <input v-model="fornecedoresQuery" @input="goToFornecedoresPage(1)" placeholder="Buscar nome, CNPJ ou contato" class="flex-1 min-w-[240px] bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-2" />
+                                <select v-model="fornecedoresStatus" @change="goToFornecedoresPage(1)" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2 text-sm">
+                                    <option value="ATIVO">Ativos</option>
+                                    <option value="INATIVO">Inativos</option>
+                                    <option value="">Todos</option>
+                                </select>
+                                <button @click="openFornecedorCreateModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Novo Fornecedor</button>
+                            </div>
+                            <div class="flex items-center justify-between text-xs text-slate-400">
+                                <p>Cadastro mestre de fornecedores</p>
+                                <p>Página {{ fornecedoresTable.pagination.page }} de {{ fornecedoresTable.pagination.totalPages }}</p>
+                            </div>
+                            <div class="max-h-80 overflow-auto border border-slate-700 rounded-xl">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">Nome Fantasia</th><th class="p-2 text-left">Razão Social</th><th class="p-2 text-left">CNPJ</th><th class="p-2 text-left">Contato</th><th class="p-2 text-left">Telefone</th><th class="p-2 text-left">E-mail</th><th class="p-2 text-right">Frete</th><th class="p-2 text-center">Status</th><th class="p-2 text-center">Ações</th></tr></thead>
+                                    <tbody>
+                                        <template v-if="fornecedoresTable.loading || moduleLoading">
+                                            <tr v-for="n in 6" :key="`fornecedor-skeleton-${n}`" class="border-t border-slate-800">
+                                                <td class="p-2" colspan="9"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                            </tr>
+                                        </template>
+                                        <template v-else>
+                                            <tr v-for="item in fornecedoresTable.rows" :key="item.uuid" class="border-t border-slate-800">
+                                                <td class="p-2">{{ item.nome_fantasia || '-' }}</td>
+                                                <td class="p-2">{{ item.razao_social || '-' }}</td>
+                                                <td class="p-2">{{ item.cnpj || '-' }}</td>
+                                                <td class="p-2">{{ item.contato || '-' }}</td>
+                                                <td class="p-2">{{ item.telefone || '-' }}</td>
+                                                <td class="p-2">{{ item.email || '-' }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.frete) }}</td>
+                                                <td class="p-2 text-center">{{ item.ativo || '-' }}</td>
+                                                <td class="p-2 text-center">
+                                                    <div class="flex items-center justify-center gap-2">
+                                                        <button @click="openFornecedorEditModal(item)" class="inline-flex items-center justify-center w-8 h-8 border border-sky-600 rounded text-sky-200 hover:bg-sky-500/10" title="Editar fornecedor" aria-label="Editar fornecedor">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                                                        </button>
+                                                        <button @click="softDeleteFornecedor(item)" :disabled="fornecedoresTable.loading" class="inline-flex items-center justify-center w-8 h-8 border border-red-600 rounded text-red-200 hover:bg-red-500/10 disabled:opacity-40" title="Inativar fornecedor" aria-label="Inativar fornecedor">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p v-if="!fornecedoresTable.rows.length && !fornecedoresTable.loading" class="p-3 text-slate-500">Sem fornecedores para os filtros informados.</p>
+                            </div>
+                            <div class="flex items-center justify-end gap-2">
+                                <button @click="goToFornecedoresPage(fornecedoresTable.pagination.page - 1)" :disabled="fornecedoresTable.loading || fornecedoresTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
+                                <button @click="goToFornecedoresPage(fornecedoresTable.pagination.page + 1)" :disabled="fornecedoresTable.loading || fornecedoresTable.pagination.page >= fornecedoresTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
+                            </div>
+
+                            <div v-if="fornecedorModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div class="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-lg font-semibold">{{ fornecedorModal.mode === 'create' ? 'Novo Fornecedor' : 'Editar Fornecedor' }}</h4>
+                                        <button @click="closeFornecedorModal" class="text-slate-400 hover:text-white">✕</button>
+                                    </div>
+                                    <div class="grid md:grid-cols-2 gap-3">
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Nome Fantasia</span><input v-model="fornecedorForm.nome_fantasia" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Razão Social</span><input v-model="fornecedorForm.razao_social" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">CNPJ</span><input v-model="fornecedorForm.cnpj" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Contato</span><input v-model="fornecedorForm.contato" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Telefone</span><input v-model="fornecedorForm.telefone" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">E-mail</span><input v-model="fornecedorForm.email" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                        <label class="space-y-1 text-sm"><span class="text-slate-300">Frete</span><input v-model.number="fornecedorForm.frete" type="number" min="0" step="0.01" class="w-full bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2" /></label>
+                                    </div>
+                                    <div class="flex justify-end gap-2">
+                                        <button @click="closeFornecedorModal" class="border border-slate-600 rounded-xl px-4 py-2">Cancelar</button>
+                                        <button @click="saveFornecedorForm" :disabled="fornecedorModal.loading" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">{{ fornecedorModal.loading ? 'Salvando...' : 'Salvar' }}</button>
+                                    </div>
+                                </div>
                             </div>
                         </template>
 
                         <template v-else-if="currentPage === 'movimentacoes'">
-                            <div class="flex items-center justify-between">
+                            <div class="flex items-center justify-between gap-3">
                                 <p class="text-slate-300 text-sm">Operação manual e upload em massa de movimentações.</p>
-                                <button @click="openBulkModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Upload em Massa</button>
+                                <div class="flex gap-2">
+                                    <button @click="openManualModal" class="border border-sky-500/50 text-sky-200 rounded-xl px-4 py-2 text-sm hover:bg-sky-500/10">Lançamento Manual</button>
+                                    <button @click="openBulkModal" class="btn-primary rounded-xl px-4 py-2 text-sm">Upload em Massa</button>
+                                </div>
                             </div>
-
-                            <form @submit.prevent="submitMovimentacao" class="grid md:grid-cols-5 gap-3">
-                                <input v-model="movForm.insumo_id" placeholder="UUID Insumo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
-                                <select v-model="movForm.tipo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2"><option>ENTRADA</option><option>SAIDA</option><option>AJUSTE</option></select>
-                                <input v-model="movForm.quantidade" type="number" step="0.01" placeholder="Quantidade" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
-                                <input v-model="movForm.observacao" placeholder="Observação" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" />
-                                <button :disabled="moduleLoading" class="btn-primary rounded-xl px-3 py-2 disabled:opacity-50">Registrar</button>
-                            </form>
 
                             <div class="border border-slate-700 rounded-xl p-3">
                                 <p class="text-xs uppercase text-slate-500 mb-2">Histórico de uploads</p>
@@ -306,6 +607,72 @@
                             </div>
 
                             <p class="text-slate-400 text-sm">A auditoria (saldo anterior/posterior) é registrada automaticamente no backend.</p>
+
+                            <div class="border border-slate-700 rounded-xl p-3 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-xs uppercase text-slate-500">Movimentações salvas</p>
+                                    <p class="text-xs text-slate-400">Página {{ movimentacoesTable.pagination.page }} de {{ movimentacoesTable.pagination.totalPages }}</p>
+                                </div>
+                                <div class="max-h-80 overflow-auto border border-slate-700 rounded-xl">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-slate-900/80"><tr><th class="p-2 text-left">Data</th><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-left">Tipo</th><th class="p-2 text-right">Quantidade</th><th class="p-2 text-left">Ações</th></tr></thead>
+                                        <tbody>
+                                            <template v-if="movimentacoesTable.loading || moduleLoading">
+                                                <tr v-for="n in 8" :key="`mov-skeleton-${n}`" class="border-t border-slate-800">
+                                                    <td class="p-2" colspan="6"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                                </tr>
+                                            </template>
+                                            <template v-else>
+                                                <tr v-for="row in movimentacoesTable.rows" :key="row.uuid" class="border-t border-slate-800">
+                                                    <td class="p-2">{{ formatDateBr(row.data_iso) }}</td>
+                                                    <td class="p-2">{{ row.codigo_ax }}</td>
+                                                    <td class="p-2">{{ row.descricao || '-' }}</td>
+                                                    <td class="p-2">{{ row.tipo }}</td>
+                                                    <td class="p-2 text-right">{{ formatQuantityBr(row.quantidade) }}</td>
+                                                    <td class="p-2">
+                                                        <button
+                                                            @click="deleteMovimentacaoRow(row)"
+                                                            :disabled="movimentacoesTable.loading || movimentacoesTable.deletingUuid === row.uuid"
+                                                            class="inline-flex items-center justify-center w-8 h-8 border border-red-500/60 text-red-300 rounded hover:bg-red-500/10 disabled:opacity-40"
+                                                            title="Excluir movimentação"
+                                                        >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                    <p v-if="!movimentacoesTable.rows.length && !movimentacoesTable.loading" class="p-3 text-slate-500">Sem movimentações registradas.</p>
+                                </div>
+                                <div class="flex items-center justify-end gap-2">
+                                    <button @click="goToMovimentacoesFirstPage" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Primeira</button>
+                                    <button @click="goToMovimentacoesPage(movimentacoesTable.pagination.page - 1)" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page <= 1" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Anterior</button>
+                                    <button @click="goToMovimentacoesPage(movimentacoesTable.pagination.page + 1)" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page >= movimentacoesTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Próxima</button>
+                                    <button @click="goToMovimentacoesLastPage" :disabled="movimentacoesTable.loading || movimentacoesTable.pagination.page >= movimentacoesTable.pagination.totalPages" class="border border-slate-600 rounded-xl px-3 py-2 text-xs disabled:opacity-50">Última</button>
+                                </div>
+                            </div>
+
+                            <div v-if="manualModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                                <div class="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-lg font-semibold">Lançamento Manual</h4>
+                                        <button @click="closeManualModal" class="text-slate-400 hover:text-white">✕</button>
+                                    </div>
+
+                                    <form @submit.prevent="submitMovimentacao" class="grid md:grid-cols-2 gap-3">
+                                        <input v-model="movForm.codigo_ax" @blur="resolveManualInsumo" placeholder="Código AX do Insumo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
+                                        <input :value="movForm.descricao" placeholder="Descrição do insumo" class="bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2 text-slate-300" readonly />
+                                        <select v-model="movForm.tipo" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2"><option>ENTRADA</option><option>SAIDA</option><option>AJUSTE</option></select>
+                                        <input v-model="movForm.quantidade" type="number" step="0.01" placeholder="Quantidade" class="bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" required />
+                                        <input v-model="movForm.observacao" placeholder="Observação" class="md:col-span-2 bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2" />
+                                        <div class="md:col-span-2 flex justify-end gap-2">
+                                            <button type="button" @click="closeManualModal" class="border border-slate-600 rounded-xl px-4 py-2">Cancelar</button>
+                                            <button :disabled="moduleLoading || !movForm.descricao" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">Registrar</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
 
                             <div v-if="bulkModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                                 <div class="w-full max-w-5xl bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-auto">
@@ -322,19 +689,27 @@
                                     </div>
 
                                     <p class="text-xs text-slate-400">Formato esperado: A|B = codigo_ax|quantidade. Pode conter header ou linhas diretas.</p>
+                                    <p v-if="bulkModal.fileName" class="text-xs text-sky-300">Arquivo selecionado: {{ bulkModal.fileName }}</p>
 
-                                    <div v-if="bulkModal.previewRows.length" class="space-y-3">
-                                        <div class="text-sm text-slate-300">Válidas: {{ bulkModal.previewRows.filter(r => r.valid).length }} | Inválidas: {{ bulkModal.previewRows.filter(r => !r.valid).length }}</div>
+                                    <div v-if="bulkModal.loading || bulkModal.previewRows.length" class="space-y-3">
+                                        <div v-if="!bulkModal.loading" class="text-sm text-slate-300">Válidas: {{ bulkModal.previewRows.filter(r => r.valid).length }} | Inválidas: {{ bulkModal.previewRows.filter(r => !r.valid).length }}</div>
                                         <div class="max-h-72 overflow-auto border border-slate-700 rounded-xl">
                                             <table class="w-full text-sm">
                                                 <thead class="bg-slate-900/80"><tr><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Nome</th><th class="p-2 text-left">Quantidade</th><th class="p-2 text-left">Status</th></tr></thead>
                                                 <tbody>
-                                                    <tr v-for="(row,idx) in bulkModal.previewRows" :key="idx" class="border-t border-slate-800">
-                                                        <td class="p-2">{{ row.codigo_ax }}</td>
-                                                        <td class="p-2">{{ row.descricao }}</td>
-                                                        <td class="p-2"><input v-model="row.quantidade" type="number" step="0.01" class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1" /></td>
-                                                        <td class="p-2" :class="row.valid ? 'text-emerald-300' : 'text-red-300'">{{ row.valid ? 'OK' : row.error }}</td>
-                                                    </tr>
+                                                    <template v-if="bulkModal.loading && !bulkModal.previewRows.length">
+                                                        <tr v-for="n in 6" :key="`bulk-skeleton-${n}`" class="border-t border-slate-800">
+                                                            <td class="p-2" colspan="4"><div class="h-4 rounded skeleton-shimmer"></div></td>
+                                                        </tr>
+                                                    </template>
+                                                    <template v-else>
+                                                        <tr v-for="(row,idx) in bulkModal.previewRows" :key="idx" class="border-t border-slate-800">
+                                                            <td class="p-2">{{ row.codigo_ax }}</td>
+                                                            <td class="p-2">{{ row.descricao }}</td>
+                                                            <td class="p-2"><input v-model="row.quantidade" type="number" step="0.01" class="w-28 bg-slate-800 border border-slate-700 rounded px-2 py-1" /></td>
+                                                            <td class="p-2" :class="row.valid ? 'text-emerald-300' : 'text-red-300'">{{ row.valid ? 'OK' : row.error }}</td>
+                                                        </tr>
+                                                    </template>
                                                 </tbody>
                                             </table>
                                         </div>
@@ -346,6 +721,30 @@
                                                 <button @click="saveBulkUpload" :disabled="bulkModal.loading" class="btn-primary rounded-xl px-4 py-2 disabled:opacity-50">Salvar Lote</button>
                                             </div>
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-if="processModal.open" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                                <div class="w-full max-w-md bg-slate-900 border border-slate-700 rounded-2xl p-6 space-y-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full border-2 border-sky-400 border-t-transparent animate-spin"></div>
+                                        <div>
+                                            <h4 class="text-lg font-semibold">{{ processModal.title }}</h4>
+                                            <p class="text-sm text-slate-300">{{ processModal.message }}</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-slate-400 bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-2">
+                                        Não feche esta tela. O sistema está garantindo idempotência e consistência do estoque.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="successModal.open" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                                <div class="w-full max-w-md bg-slate-900 border border-emerald-600/50 rounded-2xl p-6 space-y-4">
+                                    <h4 class="text-lg font-semibold text-emerald-300">{{ successModal.title }}</h4>
+                                    <p class="text-sm text-slate-200">{{ successModal.message }}</p>
+                                    <div class="flex justify-end">
+                                        <button @click="closeSuccessModal" class="btn-primary rounded-xl px-4 py-2">Voltar para Movimentações</button>
                                     </div>
                                 </div>
                             </div>
@@ -370,6 +769,7 @@
                 </main>
             </div>
         </template>
+        <footer class="border-t border-slate-800/80 bg-slate-950/90 text-slate-400 text-xs text-center py-3">copyright @SAE - Apollo Eficaz - 2026</footer>
     </div>
 
     <script>
@@ -377,29 +777,113 @@
 
         createApp({
             setup() {
+                const GAS_CLIENT_CONFIG = Object.freeze({
+                    timeoutMs: 20000,
+                    retries: 2,
+                    backoffBaseMs: 300
+                });
+
                 const loading = ref(false);
                 const moduleLoading = ref(false);
                 const errorMessage = ref('');
                 const session = ref(null);
                 const currentPage = ref('dashboard');
+                const now = new Date();
+                const DASHBOARD_MAX_ROWS = 300;
+                const DASHBOARD_CACHE_TTL_MS = 2 * 60 * 1000;
                 const form = reactive({ email: '', password: '' });
+                const dashboardFilters = reactive({
+                    year: now.getFullYear(),
+                    month: '',
+                    query: ''
+                });
+                const dashboardYearOptions = Array.from({ length: 6 }, (_, idx) => now.getFullYear() - idx);
+                const dashboardMonthOptions = [
+                    { value: 1, label: 'Janeiro' },
+                    { value: 2, label: 'Fevereiro' },
+                    { value: 3, label: 'Março' },
+                    { value: 4, label: 'Abril' },
+                    { value: 5, label: 'Maio' },
+                    { value: 6, label: 'Junho' },
+                    { value: 7, label: 'Julho' },
+                    { value: 8, label: 'Agosto' },
+                    { value: 9, label: 'Setembro' },
+                    { value: 10, label: 'Outubro' },
+                    { value: 11, label: 'Novembro' },
+                    { value: 12, label: 'Dezembro' }
+                ];
+                const dashboardChartsEnabled = ref(true);
+                const dashboardChartsState = reactive({
+                    available: typeof ApexCharts !== 'undefined',
+                    consumoChart: null,
+                    criticChart: null
+                });
+                const dashboardCache = reactive({ byKey: {} });
                 const insumosQuery = ref('');
+                const insumosStatus = ref('ATIVO');
+                const fornecedoresQuery = ref('');
+                const fornecedoresStatus = ref('ATIVO');
                 const uploadHistory = ref([]);
-
-                const moduleData = reactive({
-                    dashboard: null,
-                    insumos: null,
-                    compras: null
+                const movimentacoesTable = reactive({
+                    loading: false,
+                    rows: [],
+                    pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 },
+                    deletingUuid: ''
+                });
+                const insumosLookupCache = reactive({ loaded: false, loading: false, loadedAt: 0, byCodigo: {} });
+                const insumosTable = reactive({
+                    loading: false,
+                    rows: [],
+                    pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 }
+                });
+                const fornecedoresTable = reactive({
+                    loading: false,
+                    rows: [],
+                    pagination: { page: 1, pageSize: 20, total: 0, totalPages: 1 }
                 });
 
-                const movForm = reactive({
-                    insumo_id: '',
+                const createInsumoFormState = () => ({
+                    uuid: '',
+                    codigo_ax: '',
+                    descricao: '',
+                    unidade: 'UN',
+                    fornecedor_id: '',
+                    lead_time: '',
+                    estoque_minimo: '',
+                    consenso_dias: '',
+                    categoria: 'C'
+                });
+                const insumoForm = reactive(createInsumoFormState());
+                const insumoModal = reactive({ open: false, mode: 'create', loading: false });
+                const fornecedorOptions = ref([]);
+
+                const createFornecedorFormState = () => ({
+                    uuid: '',
+                    nome_fantasia: '',
+                    razao_social: '',
+                    cnpj: '',
+                    contato: '',
+                    telefone: '',
+                    email: '',
+                    frete: ''
+                });
+                const fornecedorForm = reactive(createFornecedorFormState());
+                const fornecedorModal = reactive({ open: false, mode: 'create', loading: false });
+
+                const createModuleState = () => ({ dashboard: null, insumos: null, fornecedores: null, compras: null });
+                const moduleData = reactive(createModuleState());
+
+                const createMovFormState = () => ({
+                    codigo_ax: '',
+                    descricao: '',
                     tipo: 'ENTRADA',
                     quantidade: '',
                     observacao: ''
                 });
+                const movForm = reactive(createMovFormState());
+                const manualModal = reactive({ open: false });
 
-                const bulkModal = reactive({
+                const createBulkModalState = () => ({
                     open: false,
                     loading: false,
                     fileName: '',
@@ -409,23 +893,60 @@
                     rawRows: [],
                     previewRows: []
                 });
+                const bulkModal = reactive(createBulkModalState());
+                const processModal = reactive({ open: false, title: '', message: '' });
+                const successModal = reactive({ open: false, title: '', message: '' });
 
                 const pageContent = {
                     dashboard: 'Visão executiva com KPIs de estoque crítico e consumo médio.',
                     insumos: 'Cadastro mestre de insumos, lead time e classificação ABC.',
+                    fornecedores: 'Cadastro e gestão de fornecedores com contato e custo de frete.',
                     movimentacoes: 'Registro e auditoria de entradas, saídas e ajustes de estoque.',
                     compras: 'Lista de ressuprimento e planejamento de compras por criticidade.',
                     configuracoes: 'Parâmetros do sistema e administração de usuários.'
                 };
 
                 const isAuthenticated = computed(() => !!session.value);
+                const dashboardRows = computed(() => {
+                    const rows = Array.isArray(moduleData.dashboard?.data) ? moduleData.dashboard.data : [];
+                    return rows.slice(0, DASHBOARD_MAX_ROWS);
+                });
+                const dashboardRowsLimited = computed(() => {
+                    const rows = Array.isArray(moduleData.dashboard?.data) ? moduleData.dashboard.data : [];
+                    return rows.length > DASHBOARD_MAX_ROWS;
+                });
+                const dashboardRupturaRows = computed(() => {
+                    return dashboardRows.value
+                        .filter(item => !!item.data_estimada_ruptura)
+                        .slice()
+                        .sort((a, b) => {
+                            const da = new Date(a.data_estimada_ruptura).getTime();
+                            const db = new Date(b.data_estimada_ruptura).getTime();
+                            return da - db;
+                        })
+                        .slice(0, 15);
+                });
 
                 const refreshIcons = async () => {
                     await nextTick();
                     lucide.createIcons();
                 };
 
-                const runGAS = (method, ...args) => new Promise((resolve, reject) => {
+                const pendingQueue = [];
+                let queueRunning = false;
+
+                const logCall = (event, payload) => {
+                    console.log('[SAE:GAS]', JSON.stringify({ event, at: new Date().toISOString(), ...payload }));
+                };
+
+                const withTimeout = (promise, timeoutMs, method) => new Promise((resolve, reject) => {
+                    const timer = setTimeout(() => reject(new Error(`Timeout ao chamar ${method} (${timeoutMs}ms)`)), timeoutMs);
+                    promise.then((value) => { clearTimeout(timer); resolve(value); }).catch((error) => { clearTimeout(timer); reject(error); });
+                });
+
+                const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+                const runGASDirect = (method, ...args) => new Promise((resolve, reject) => {
                     if (typeof google === 'undefined' || !google?.script?.run) {
                         reject(new Error('Ambiente GAS indisponível neste preview.'));
                         return;
@@ -435,20 +956,356 @@
                         .withFailureHandler(reject)[method](...args);
                 });
 
-                const loadDashboard = async () => {
-                    moduleLoading.value = true;
-                    const resp = await runGAS('getDashboardData', {});
-                    if (resp.success === false) throw new Error(resp.message);
-                    moduleData.dashboard = resp;
-                    moduleLoading.value = false;
+                const runWithRetry = async (method, args) => {
+                    let attempt = 0;
+                    while (attempt <= GAS_CLIENT_CONFIG.retries) {
+                        try {
+                            logCall('request_start', { method, attempt });
+                            const response = await withTimeout(runGASDirect(method, ...args), GAS_CLIENT_CONFIG.timeoutMs, method);
+                            logCall('request_success', { method, attempt });
+                            return response;
+                        } catch (error) {
+                            logCall('request_error', { method, attempt, error: error?.message || String(error) });
+                            if (attempt >= GAS_CLIENT_CONFIG.retries) throw error;
+                            const delay = GAS_CLIENT_CONFIG.backoffBaseMs * Math.pow(2, attempt);
+                            await sleep(delay);
+                        }
+                        attempt += 1;
+                    }
                 };
 
-                const loadInsumos = async () => {
+                const runQueue = async () => {
+                    if (queueRunning || !pendingQueue.length) return;
+                    queueRunning = true;
+                    const next = pendingQueue.shift();
+                    try {
+                        const response = await runWithRetry(next.method, next.args);
+                        next.resolve(response);
+                    } catch (error) {
+                        next.reject(error);
+                    } finally {
+                        queueRunning = false;
+                        runQueue();
+                    }
+                };
+
+                const runGAS = (method, ...args) => new Promise((resolve, reject) => {
+                    pendingQueue.push({ method, args, resolve, reject });
+                    runQueue();
+                });
+
+                const dashboardFilterPayload = () => {
+                    const currentYear = new Date().getFullYear();
+                    const year = Number(dashboardFilters.year || currentYear);
+                    const month = dashboardFilters.month === '' ? undefined : Number(dashboardFilters.month);
+
+                    if (!Number.isFinite(year) || year < 2000 || year > currentYear + 1) {
+                        throw new Error(`Ano inválido para dashboard: ${dashboardFilters.year}`);
+                    }
+                    if (month !== undefined && (!Number.isFinite(month) || month < 1 || month > 12)) {
+                        throw new Error(`Mês inválido para dashboard: ${dashboardFilters.month}`);
+                    }
+
+                    return {
+                        year,
+                        month,
+                        query: String(dashboardFilters.query || '').trim()
+                    };
+                };
+
+                const getDashboardFromCache = (key) => {
+                    const cacheItem = dashboardCache.byKey[key];
+                    if (!cacheItem) return null;
+                    if ((Date.now() - cacheItem.ts) > DASHBOARD_CACHE_TTL_MS) return null;
+                    return cacheItem.data;
+                };
+
+                const setDashboardCache = (key, data) => {
+                    dashboardCache.byKey[key] = { ts: Date.now(), data };
+                };
+
+                const destroyDashboardCharts = () => {
+                    if (dashboardChartsState.consumoChart) {
+                        dashboardChartsState.consumoChart.destroy();
+                        dashboardChartsState.consumoChart = null;
+                    }
+                    if (dashboardChartsState.criticChart) {
+                        dashboardChartsState.criticChart.destroy();
+                        dashboardChartsState.criticChart = null;
+                    }
+                };
+
+                const renderDashboardCharts = async () => {
+                    if (!dashboardChartsEnabled.value || !dashboardChartsState.available) {
+                        destroyDashboardCharts();
+                        return;
+                    }
+
+                    await nextTick();
+                    const rows = dashboardRows.value;
+                    const monthly = Array.isArray(moduleData.dashboard?.charts?.consumo_mensal) ? moduleData.dashboard.charts.consumo_mensal : [];
+
+                    const consumoEl = document.querySelector('#dashboard-consumo-chart');
+                    const criticEl = document.querySelector('#dashboard-critic-chart');
+                    if (!consumoEl || !criticEl) return;
+
+                    destroyDashboardCharts();
+
+                    const consumoOptions = {
+                        chart: { type: 'line', height: 240, toolbar: { show: false }, foreColor: '#cbd5e1' },
+                        series: [{ name: 'Consumo', data: monthly.map(item => Number(item.consumo || 0)) }],
+                        xaxis: { categories: monthly.map(item => String(item.label || '')) },
+                        stroke: { curve: 'smooth', width: 2 },
+                        colors: ['#38bdf8'],
+                        grid: { borderColor: 'rgba(148,163,184,0.2)' }
+                    };
+
+                    const criticalRows = rows
+                        .filter(item => String(item.status_estoque || '').toUpperCase() !== 'OK')
+                        .slice(0, 10);
+
+                    const criticOptions = {
+                        chart: { type: 'bar', height: 240, stacked: false, toolbar: { show: false }, foreColor: '#cbd5e1' },
+                        series: [
+                            { name: 'Disponível', data: criticalRows.map(item => Number(item.saldo_atual || 0)) },
+                            { name: 'Ponto Ressupr.', data: criticalRows.map(item => Number(item.ponto_ressuprimento || 0)) }
+                        ],
+                        xaxis: { categories: criticalRows.map(item => String(item.codigo_ax || '-')) },
+                        colors: ['#22c55e', '#f59e0b'],
+                        grid: { borderColor: 'rgba(148,163,184,0.2)' }
+                    };
+
+                    dashboardChartsState.consumoChart = new ApexCharts(consumoEl, consumoOptions);
+                    dashboardChartsState.criticChart = new ApexCharts(criticEl, criticOptions);
+                    await dashboardChartsState.consumoChart.render();
+                    await dashboardChartsState.criticChart.render();
+                };
+
+                const loadDashboard = async () => {
                     moduleLoading.value = true;
-                    const resp = await runGAS('getInsumosData', { query: insumosQuery.value });
+                    try {
+                        const payload = dashboardFilterPayload();
+                        const cacheKey = JSON.stringify(payload);
+                        const cached = getDashboardFromCache(cacheKey);
+                        if (cached) {
+                            moduleData.dashboard = cached;
+                        } else {
+                            const resp = await runGAS('getDashboardData', payload);
+                            if (resp.success === false) throw new Error(resp.message);
+                            moduleData.dashboard = resp;
+                            setDashboardCache(cacheKey, resp);
+                        }
+                    } finally {
+                        moduleLoading.value = false;
+                    }
+
+                    await nextTick();
+                    await renderDashboardCharts();
+                };
+
+                const applyDashboardFilters = async () => {
+                    await loadDashboard();
+                };
+
+                const loadInsumos = async (page = 1) => {
+                    moduleLoading.value = true;
+                    insumosTable.loading = true;
+                    try {
+                        const resp = await runGAS('listInsumos', {
+                            page,
+                            pageSize: 20,
+                            query: insumosQuery.value,
+                            status: insumosStatus.value
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        insumosTable.rows = resp.data || [];
+                        insumosTable.pagination = resp.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                        moduleData.insumos = { data: insumosTable.rows, pagination: insumosTable.pagination };
+                    } finally {
+                        insumosTable.loading = false;
+                        moduleLoading.value = false;
+                    }
+                };
+
+                const goToInsumosPage = async (page) => {
+                    const target = Math.max(1, Number(page || 1));
+                    await loadInsumos(target);
+                };
+                const ensureFornecedorOptions = async () => {
+                    const resp = await runGAS('getFornecedorOptions');
                     if (resp.success === false) throw new Error(resp.message);
-                    moduleData.insumos = resp;
-                    moduleLoading.value = false;
+                    fornecedorOptions.value = Array.isArray(resp.data) ? resp.data : [];
+                };
+
+                const openInsumoCreateModal = async () => {
+                    Object.assign(insumoForm, createInsumoFormState());
+                    insumoModal.mode = 'create';
+                    insumoModal.open = true;
+                    await ensureFornecedorOptions();
+                };
+
+                const openInsumoEditModal = async (item) => {
+                    Object.assign(insumoForm, {
+                        uuid: String(item.uuid || ''),
+                        codigo_ax: String(item.codigo_ax || ''),
+                        descricao: String(item.descricao || ''),
+                        unidade: String(item.unidade || 'UN'),
+                        fornecedor_id: String(item.fornecedor_id || ''),
+                        lead_time: Number(item.lead_time || 0),
+                        estoque_minimo: Number(item.estoque_minimo || 0),
+                        consenso_dias: Number(item.consenso_dias || 0),
+                        categoria: String(item.categoria || 'C')
+                    });
+                    insumoModal.mode = 'edit';
+                    insumoModal.open = true;
+                    await ensureFornecedorOptions();
+                };
+
+                const closeInsumoModal = () => {
+                    insumoModal.open = false;
+                    insumoModal.loading = false;
+                    Object.assign(insumoForm, createInsumoFormState());
+                };
+
+                const saveInsumoForm = async () => {
+                    insumoModal.loading = true;
+                    try {
+                        const payload = {
+                            uuid: insumoForm.uuid || undefined,
+                            codigo_ax: insumoForm.codigo_ax,
+                            descricao: insumoForm.descricao,
+                            unidade: insumoForm.unidade,
+                            fornecedor_id: insumoForm.fornecedor_id,
+                            lead_time: Number(insumoForm.lead_time || 0),
+                            estoque_minimo: Number(insumoForm.estoque_minimo || 0),
+                            consenso_dias: Number(insumoForm.consenso_dias || 0),
+                            categoria: insumoForm.categoria,
+                            usuario_email: session.value?.user?.email
+                        };
+                        const resp = await runGAS('saveInsumo', payload);
+                        if (resp.success === false) throw new Error(resp.message);
+                        closeInsumoModal();
+                        await loadInsumos(insumosTable.pagination.page || 1);
+                        ensureInsumosLookupCache(true).catch(() => {});
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    } finally {
+                        insumoModal.loading = false;
+                    }
+                };
+
+                const softDeleteInsumo = async (item) => {
+                    const uuid = String(item?.uuid || '').trim();
+                    if (!uuid) return;
+                    const ok = window.confirm(`Confirma inativar o insumo ${item.codigo_ax} - ${item.descricao}?`);
+                    if (!ok) return;
+                    try {
+                        const resp = await runGAS('inactivateInsumo', {
+                            uuid,
+                            usuario_email: session.value?.user?.email
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        await loadInsumos(insumosTable.pagination.page || 1);
+                        ensureInsumosLookupCache(true).catch(() => {});
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    }
+                };
+
+                const loadFornecedores = async (page = 1) => {
+                    moduleLoading.value = true;
+                    fornecedoresTable.loading = true;
+                    try {
+                        const resp = await runGAS('listFornecedores', {
+                            page,
+                            pageSize: 20,
+                            query: fornecedoresQuery.value,
+                            status: fornecedoresStatus.value
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        fornecedoresTable.rows = resp.data || [];
+                        fornecedoresTable.pagination = resp.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                        moduleData.fornecedores = { data: fornecedoresTable.rows, pagination: fornecedoresTable.pagination };
+                    } finally {
+                        fornecedoresTable.loading = false;
+                        moduleLoading.value = false;
+                    }
+                };
+
+                const goToFornecedoresPage = async (page) => {
+                    const target = Math.max(1, Number(page || 1));
+                    await loadFornecedores(target);
+                };
+
+                const openFornecedorCreateModal = () => {
+                    Object.assign(fornecedorForm, createFornecedorFormState());
+                    fornecedorModal.mode = 'create';
+                    fornecedorModal.open = true;
+                };
+
+                const openFornecedorEditModal = (item) => {
+                    Object.assign(fornecedorForm, {
+                        uuid: String(item.uuid || ''),
+                        nome_fantasia: String(item.nome_fantasia || ''),
+                        razao_social: String(item.razao_social || ''),
+                        cnpj: String(item.cnpj || ''),
+                        contato: String(item.contato || ''),
+                        telefone: String(item.telefone || ''),
+                        email: String(item.email || ''),
+                        frete: Number(item.frete || 0)
+                    });
+                    fornecedorModal.mode = 'edit';
+                    fornecedorModal.open = true;
+                };
+
+                const closeFornecedorModal = () => {
+                    fornecedorModal.open = false;
+                    fornecedorModal.loading = false;
+                    Object.assign(fornecedorForm, createFornecedorFormState());
+                };
+
+                const saveFornecedorForm = async () => {
+                    fornecedorModal.loading = true;
+                    try {
+                        const payload = {
+                            uuid: fornecedorForm.uuid || undefined,
+                            nome_fantasia: fornecedorForm.nome_fantasia,
+                            razao_social: fornecedorForm.razao_social,
+                            cnpj: fornecedorForm.cnpj,
+                            contato: fornecedorForm.contato,
+                            telefone: fornecedorForm.telefone,
+                            email: fornecedorForm.email,
+                            frete: Number(fornecedorForm.frete || 0),
+                            usuario_email: session.value?.user?.email
+                        };
+                        const resp = await runGAS('saveFornecedor', payload);
+                        if (resp.success === false) throw new Error(resp.message);
+                        closeFornecedorModal();
+                        await loadFornecedores(fornecedoresTable.pagination.page || 1);
+                        await ensureFornecedorOptions();
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    } finally {
+                        fornecedorModal.loading = false;
+                    }
+                };
+
+                const softDeleteFornecedor = async (item) => {
+                    const uuid = String(item?.uuid || '').trim();
+                    if (!uuid) return;
+                    const ok = window.confirm(`Confirma inativar o fornecedor ${item.nome_fantasia}?`);
+                    if (!ok) return;
+                    try {
+                        const resp = await runGAS('inactivateFornecedor', {
+                            uuid,
+                            usuario_email: session.value?.user?.email
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        await loadFornecedores(fornecedoresTable.pagination.page || 1);
+                        await ensureFornecedorOptions();
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    }
                 };
 
                 const loadCompras = async () => {
@@ -466,6 +1323,125 @@
                     uploadHistory.value = resp.data || [];
                 };
 
+                const loadMovimentacoesTable = async (page = 1) => {
+                    movimentacoesTable.loading = true;
+                    try {
+                        const resp = await runGAS('listMovimentacoes', { page, pageSize: 20 });
+                        if (resp.success === false) throw new Error(resp.message);
+                        movimentacoesTable.rows = resp.data || [];
+                        movimentacoesTable.pagination = resp.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                    } finally {
+                        movimentacoesTable.loading = false;
+                    }
+                };
+                const deleteMovimentacaoRow = async (row) => {
+                    const uuid = String(row?.uuid || '').trim();
+                    if (!uuid) {
+                        throw new Error('UUID da movimentação inválido para exclusão.');
+                    }
+
+                    const confirmed = window.confirm(`Confirma excluir a movimentação ${row.codigo_ax || ''} (${formatDateBr(row.data_iso)})?`);
+                    if (!confirmed) return;
+
+                    movimentacoesTable.deletingUuid = uuid;
+                    try {
+                        const resp = await runGAS('deleteMovimentacao', {
+                            uuid,
+                            usuario_email: session.value?.user?.email
+                        });
+                        if (resp.success === false) throw new Error(resp.message);
+                        await loadMovimentacoesTable(movimentacoesTable.pagination.page || 1);
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    } finally {
+                        movimentacoesTable.deletingUuid = '';
+                    }
+                };
+
+
+                const goToMovimentacoesPage = async (page) => {
+                    const nextPage = Math.max(1, Number(page || 1));
+                    await loadMovimentacoesTable(nextPage);
+                };
+
+                const goToMovimentacoesFirstPage = async () => {
+                    await loadMovimentacoesTable(1);
+                };
+
+                const goToMovimentacoesLastPage = async () => {
+                    const last = Number(movimentacoesTable.pagination.totalPages || 1);
+                    await loadMovimentacoesTable(last);
+                };
+
+                const formatDateBr = (isoValue) => {
+                    const dt = new Date(isoValue);
+                    if (Number.isNaN(dt.getTime())) return '-';
+                    return dt.toLocaleString('pt-BR');
+                };
+
+                const formatDateOnlyBr = (isoValue) => {
+                    const dt = new Date(isoValue);
+                    if (Number.isNaN(dt.getTime())) return '-';
+                    return dt.toLocaleDateString('pt-BR');
+                };
+
+                const formatQuantityBr = (value) => Number(value || 0).toLocaleString('pt-BR', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2
+                });
+
+                const sanitizeNumberUi = (value) => {
+                    const n = Number(value || 0);
+                    return Number.isFinite(n) ? n.toLocaleString('pt-BR') : '0';
+                };
+
+                const signedBadgeClass = (value) => {
+                    const n = Number(value || 0);
+                    if (!Number.isFinite(n)) return 'bg-slate-700/40 text-slate-200';
+                    if (n < 0) return 'bg-red-500/20 text-red-200 border border-red-500/40';
+                    if (n > 0) return 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40';
+                    return 'bg-slate-700/40 text-slate-200 border border-slate-600/40';
+                };
+
+                const normalizeAx = (value) => String(value || '').trim();
+
+                const ensureInsumosLookupCache = async (forceRefresh = false) => {
+                    const ttlMs = 5 * 60 * 1000;
+                    const fresh = insumosLookupCache.loaded && (Date.now() - insumosLookupCache.loadedAt) < ttlMs;
+                    if (!forceRefresh && fresh) return;
+                    if (insumosLookupCache.loading) return;
+
+                    insumosLookupCache.loading = true;
+                    try {
+                        const resp = await runGAS('getInsumosData', {});
+                        if (resp.success === false) throw new Error(resp.message);
+
+                        const data = Array.isArray(resp.data) ? resp.data : [];
+                        const map = {};
+                        data.forEach(item => {
+                            const ax = normalizeAx(item.codigo_ax);
+                            if (!ax) return;
+                            map[ax] = {
+                                codigo_ax: ax,
+                                descricao: String(item.descricao || ''),
+                                uuid: String(item.uuid || '')
+                            };
+                        });
+
+                        insumosLookupCache.byCodigo = map;
+                        insumosLookupCache.loaded = true;
+                        insumosLookupCache.loadedAt = Date.now();
+                    } finally {
+                        insumosLookupCache.loading = false;
+                    }
+                };
+
+                const getInsumoByCodigoFromCache = (codigoAx) => {
+                    const ax = normalizeAx(codigoAx);
+                    if (!ax) return null;
+                    return insumosLookupCache.byCodigo[ax] || null;
+                };
+
                 const loadCurrentModule = async () => {
                     try {
                         errorMessage.value = '';
@@ -473,14 +1449,36 @@
                         if (typeof google === 'undefined' || !google?.script?.run) return;
 
                         if (currentPage.value === 'dashboard') await loadDashboard();
-                        if (currentPage.value === 'insumos') await loadInsumos();
+                        if (currentPage.value === 'insumos') {
+                            await loadInsumos();
+                            await ensureFornecedorOptions();
+                        }
+                        if (currentPage.value === 'fornecedores') {
+                            await loadFornecedores();
+                        }
                         if (currentPage.value === 'compras') await loadCompras();
-                        if (currentPage.value === 'movimentacoes') await loadUploadHistory();
+                        if (currentPage.value === 'movimentacoes') {
+                            await loadUploadHistory();
+                            await loadMovimentacoesTable(1);
+                            await ensureInsumosLookupCache();
+                        }
                     } catch (error) {
                         moduleLoading.value = false;
                         errorMessage.value = error.message || String(error);
                     }
                 };
+
+                const debounce = (fn, waitMs = 250) => {
+                    let timer = null;
+                    return (...args) => {
+                        clearTimeout(timer);
+                        timer = setTimeout(() => fn(...args), waitMs);
+                    };
+                };
+
+                const loadCurrentModuleDebounced = debounce(() => {
+                    loadCurrentModule();
+                }, 250);
 
                 const goToPage = async (page) => {
                     if (!session.value?.user?.allowed_pages?.includes(page)) {
@@ -489,7 +1487,7 @@
                     }
                     errorMessage.value = '';
                     currentPage.value = page;
-                    await loadCurrentModule();
+                    loadCurrentModuleDebounced();
                 };
 
                 const handleLoginSuccess = async (response) => {
@@ -503,7 +1501,8 @@
                     currentPage.value = response.user.landing_page || response.user.allowed_pages?.[0] || 'dashboard';
                     form.password = '';
                     await refreshIcons();
-                    await loadCurrentModule();
+                    ensureInsumosLookupCache().catch(() => {});
+                    loadCurrentModuleDebounced();
                 };
 
                 const handleLoginError = (error) => {
@@ -516,10 +1515,9 @@
                     errorMessage.value = '';
 
                     if (typeof google !== 'undefined' && google?.script?.run) {
-                        google.script.run
-                            .withSuccessHandler(handleLoginSuccess)
-                            .withFailureHandler(handleLoginError)
-                            .doLogin({ email: form.email, password: form.password });
+                        runGAS('doLogin', { email: form.email, password: form.password })
+                            .then(handleLoginSuccess)
+                            .catch(handleLoginError);
                         return;
                     }
 
@@ -530,7 +1528,7 @@
                                 nome: 'Usuário Preview',
                                 email: 'preview@apollo.com',
                                 role: 'ADMIN',
-                                allowed_pages: ['dashboard', 'insumos', 'movimentacoes', 'compras', 'configuracoes'],
+                                allowed_pages: ['dashboard', 'insumos', 'fornecedores', 'movimentacoes', 'compras', 'configuracoes'],
                                 landing_page: 'dashboard'
                             }
                         });
@@ -542,7 +1540,7 @@
                         moduleLoading.value = true;
                         errorMessage.value = '';
                         const payload = {
-                            insumo_id: movForm.insumo_id,
+                            codigo_ax: movForm.codigo_ax,
                             tipo: movForm.tipo,
                             quantidade: movForm.quantidade,
                             observacao: movForm.observacao,
@@ -550,9 +1548,11 @@
                         };
                         const resp = await runGAS('updateStockLevel', payload);
                         if (resp.success === false) throw new Error(resp.message);
-                        movForm.quantidade = '';
-                        movForm.observacao = '';
-                        await loadCurrentModule();
+                        const ax = movForm.codigo_ax;
+                        closeManualModal();
+                        await loadMovimentacoesTable(1);
+                        loadCurrentModuleDebounced();
+                        openSuccessModal('Movimentação registrada com sucesso', `Código AX: ${ax} | Tipo: ${payload.tipo} | Quantidade: ${payload.quantidade}`);
                     } catch (error) {
                         errorMessage.value = error.message || String(error);
                     } finally {
@@ -566,12 +1566,77 @@
                 };
 
                 const closeBulkModal = () => {
-                    bulkModal.open = false;
-                    bulkModal.loading = false;
-                    bulkModal.fileName = '';
-                    bulkModal.observacao = '';
-                    bulkModal.rawRows = [];
-                    bulkModal.previewRows = [];
+                    Object.assign(bulkModal, createBulkModalState());
+                };
+
+                const openManualModal = () => {
+                    manualModal.open = true;
+                    ensureInsumosLookupCache().catch(() => {});
+                };
+
+                const closeManualModal = () => {
+                    manualModal.open = false;
+                    Object.assign(movForm, createMovFormState());
+                };
+
+                const resolveManualInsumo = async () => {
+                    try {
+                        const codigo = normalizeAx(movForm.codigo_ax);
+                        movForm.descricao = '';
+                        if (!codigo) return;
+
+                        let found = getInsumoByCodigoFromCache(codigo);
+                        if (!found) {
+                            await ensureInsumosLookupCache();
+                            found = getInsumoByCodigoFromCache(codigo);
+                        }
+
+                        if (!found) {
+                            const resp = await runGAS('getInsumosData', { query: codigo });
+                            if (resp.success === false) throw new Error(resp.message);
+                            const data = Array.isArray(resp.data) ? resp.data : [];
+                            const exact = data.find(item => normalizeAx(item.codigo_ax) === codigo);
+                            if (exact) {
+                                found = {
+                                    codigo_ax: normalizeAx(exact.codigo_ax),
+                                    descricao: String(exact.descricao || ''),
+                                    uuid: String(exact.uuid || '')
+                                };
+                                insumosLookupCache.byCodigo[found.codigo_ax] = found;
+                            }
+                        }
+
+                        if (found) {
+                            movForm.codigo_ax = found.codigo_ax;
+                            movForm.descricao = found.descricao;
+                        }
+                    } catch (error) {
+                        errorMessage.value = error.message || String(error);
+                    }
+                };
+
+                const openProcessModal = (title, message) => {
+                    processModal.open = true;
+                    processModal.title = title;
+                    processModal.message = message;
+                };
+
+                const closeProcessModal = () => {
+                    processModal.open = false;
+                    processModal.title = '';
+                    processModal.message = '';
+                };
+
+                const openSuccessModal = (title, message) => {
+                    successModal.open = true;
+                    successModal.title = title;
+                    successModal.message = message;
+                };
+
+                const closeSuccessModal = () => {
+                    successModal.open = false;
+                    successModal.title = '';
+                    successModal.message = '';
                 };
 
                 const parseBulkText = (text) => {
@@ -673,6 +1738,14 @@
                     }
                 };
 
+                const generateClientUUID = () => {
+                    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        const r = (Math.random() * 16) | 0;
+                        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+                        return v.toString(16);
+                    });
+                };
+
                 const saveBulkUpload = async () => {
                     try {
                         bulkModal.loading = true;
@@ -685,20 +1758,48 @@
                             error: (!row.insumo_id ? 'Código AX não encontrado.' : (Number(row.quantidade) > 0 ? '' : 'Quantidade inválida'))
                         }));
 
-                        const resp = await runGAS('saveBulkMovimentacao', {
+                        const requestId = generateClientUUID();
+                        const payload = {
+                            request_id: requestId,
                             rows: sanitizedRows,
                             usuario_email: session.value?.user?.email,
                             data_iso: bulkModal.data_iso,
                             tipo: bulkModal.tipo,
                             observacao: bulkModal.observacao,
                             file_name: bulkModal.fileName
-                        });
-                        if (resp.success === false) throw new Error(resp.message);
+                        };
 
+                        openProcessModal('Processando upload em lote', 'Validando itens e registrando movimentações...');
+
+                        let resp = null;
+                        for (let attempt = 0; attempt < 6; attempt += 1) {
+                            try {
+                                processModal.message = `Processando requisição (${attempt + 1}/6)...`;
+                                resp = await runGAS('saveBulkMovimentacao', payload);
+                                if (resp.success === false) throw new Error(resp.message);
+                                break;
+                            } catch (error) {
+                                const msg = error?.message || String(error);
+                                if (msg.includes('já em processamento') && attempt < 5) {
+                                    processModal.message = 'Requisição em processamento no servidor. Sincronizando resultado...';
+                                    await sleep(1200);
+                                    continue;
+                                }
+                                throw error;
+                            }
+                        }
+
+                        if (!resp) {
+                            throw new Error('Não foi possível obter confirmação do upload. Tente novamente em alguns segundos.');
+                        }
+
+                        closeProcessModal();
                         closeBulkModal();
-                        await loadCurrentModule();
-                        errorMessage.value = `Upload salvo. ID: ${resp.upload_id} | Movimentos: ${resp.total_movimentos}`;
+                        await loadMovimentacoesTable(1);
+                        loadCurrentModuleDebounced();
+                        openSuccessModal('Upload concluído com sucesso', `ID: ${resp.upload_id} | Movimentos: ${resp.total_movimentos}`);
                     } catch (error) {
+                        closeProcessModal();
                         errorMessage.value = error.message || String(error);
                     } finally {
                         bulkModal.loading = false;
@@ -740,11 +1841,25 @@
                     currentPage.value = 'dashboard';
                     errorMessage.value = '';
                     form.password = '';
-                    moduleData.dashboard = null;
-                    moduleData.insumos = null;
-                    moduleData.compras = null;
+                    Object.assign(moduleData, createModuleState());
                     uploadHistory.value = [];
+                    insumosTable.rows = [];
+                    insumosTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                    fornecedoresTable.rows = [];
+                    fornecedoresTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                    movimentacoesTable.rows = [];
+                    movimentacoesTable.pagination = { page: 1, pageSize: 20, total: 0, totalPages: 1 };
+                    movimentacoesTable.deletingUuid = '';
+                    insumosLookupCache.loaded = false;
+                    insumosLookupCache.loadedAt = 0;
+                    insumosLookupCache.byCodigo = {};
+                    dashboardCache.byKey = {};
+                    destroyDashboardCharts();
                     closeBulkModal();
+                    closeManualModal();
+                    closeInsumoModal();
+                    closeFornecedorModal();
+                    fornecedorOptions.value = [];
                     await refreshIcons();
                 };
 
@@ -752,6 +1867,15 @@
 
                 return {
                     form,
+                    DASHBOARD_MAX_ROWS,
+                    dashboardFilters,
+                    dashboardYearOptions,
+                    dashboardMonthOptions,
+                    dashboardChartsEnabled,
+                    dashboardChartsState,
+                    dashboardRows,
+                    dashboardRowsLimited,
+                    dashboardRupturaRows,
                     loading,
                     moduleLoading,
                     errorMessage,
@@ -760,18 +1884,59 @@
                     pageContent,
                     moduleData,
                     insumosQuery,
+                    insumosStatus,
+                    fornecedoresQuery,
+                    fornecedoresStatus,
+                    insumosTable,
+                    fornecedoresTable,
+                    insumoForm,
+                    insumoModal,
+                    fornecedorForm,
+                    fornecedorModal,
+                    fornecedorOptions,
                     movForm,
+                    manualModal,
                     uploadHistory,
+                    movimentacoesTable,
                     bulkModal,
+                    processModal,
+                    successModal,
                     isAuthenticated,
                     handleLogin,
                     logout,
                     goToPage,
                     loadCurrentModule,
+                    applyDashboardFilters,
                     loadInsumos,
+                    goToInsumosPage,
+                    loadFornecedores,
+                    goToFornecedoresPage,
+                    openInsumoCreateModal,
+                    openInsumoEditModal,
+                    closeInsumoModal,
+                    saveInsumoForm,
+                    softDeleteInsumo,
+                    openFornecedorCreateModal,
+                    openFornecedorEditModal,
+                    closeFornecedorModal,
+                    saveFornecedorForm,
+                    softDeleteFornecedor,
                     submitMovimentacao,
+                    openManualModal,
+                    closeManualModal,
+                    resolveManualInsumo,
                     openBulkModal,
                     closeBulkModal,
+                    closeSuccessModal,
+                    goToMovimentacoesPage,
+                    goToMovimentacoesFirstPage,
+                    goToMovimentacoesLastPage,
+                    deleteMovimentacaoRow,
+                    formatDateBr,
+                    formatDateOnlyBr,
+                    formatQuantityBr,
+                    sanitizeNumberUi,
+                    signedBadgeClass,
                     onBulkFileChange,
                     prepareBulkUpload,
                     saveBulkUpload,

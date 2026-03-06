@@ -123,7 +123,43 @@ Este documento descreve o status da evolução do módulo de Gestão de Programa
 `uuid, data_iso, insumo_id, codigo_ax, tipo, quantidade, usuario_email, observacao`
 
 ### `cad_fornecedores`
-`uuid, nome_fantasia, razao_social, cnpj, contato, telefone, email`
+`uuid, nome_fantasia, razao_social, cnpj, contato, telefone, email, frete, ativo, criado_em`
+
+## 📊 Contrato do Dashboard (payload e filtros)
+
+### Endpoint/fachada
+- `getDashboardData(filters)`
+
+### Filtros aceitos
+- `year` *(number, opcional; default = ano atual)*
+- `month` *(number 1..12, opcional; quando ausente considera todos os meses do ano)*
+- `query` *(string, opcional; busca por código AX/descrição)*
+
+### Exemplo de payload
+```javascript
+{
+  year: 2026,
+  month: 3,
+  query: '1001 parafuso'
+}
+```
+
+### Campos principais de resposta
+- `success` *(boolean)*
+- `generated_at` *(ISO string)*
+- `period` *(obj: `{ year, month|null }`)*
+- `summary` *(obj: `{ total, criticos, em_alerta, saudaveis }`)*
+- `data[]` (KPIs por insumo), incluindo:
+  - `codigo_ax`, `descricao`
+  - `consumo_mes_atual`
+  - `saldo_atual` (disponível hoje)
+  - `ponto_ressuprimento`
+  - `dias_estimados_consumo`
+  - `meses_estimados_consumo`
+  - `consumo_medio_mensal`
+  - `lead_time`, `consenso_dias`
+  - `status_estoque`
+- `charts.consumo_mensal[]` (série temporal para gráfico opcional ApexCharts)
 
 ### `sys_usuarios`
 `uuid, nome, email, senha, permissao, paginas_acesso, status, ultimo_login`
@@ -189,6 +225,199 @@ Documento atualizado em: 2026-03-02
 - Rode `./check_frontend_syntax.sh` antes de `clasp push`.
 - O script extrai o bloco `<script>` do `index.html` e valida com `node --check`.
 - Isso evita regressões de runtime como `Invalid regular expression` em produção.
+- Rode também `./check_dashboard_smoke.sh` para validar regressões de filtros e contrato do payload do dashboard.
 
 - Render local automatizado: `./check_render_local.sh` (usa curl e valida tokens essenciais da página).
 - Análise de regressão do `index.html` contra baseline estável: `./analyze_index_regression.sh b8fc91f` (aponta diferenças de sintaxe/dependências potencialmente incompatíveis com o painel do GAS).
+
+## 🧩 Plano de Refatoração por Sprints (Executado)
+
+### Sprint 1 — Abstração & Segurança
+- [x] `services.gs` criado com `SheetRepository`, `QueryBuilder`, `CacheManager`, `ValidationService` e `StockService`.
+- [x] `models.gs` criado com schemas centrais (`SAE_SCHEMAS`), campos obrigatórios (`SAE_REQUIRED_FIELDS`) e thresholds de status (`ESTOQUE_STATUS`).
+- [x] Timeout/retry/fila para chamadas `google.script.run` implementados no frontend (`runGAS` com backoff exponencial).
+- [x] `AuditLogger` implementado e integrado no fluxo de movimentação unitária.
+
+### Sprint 2 — Refatoração Backend
+- [x] API Gateway inicial em `api.gs` com `doPost`, roteamento (`dispatchApiRequest_`) e resposta normalizada.
+- [x] `code.gs` atualizado para delegar validações a `ValidationService` e mutações de saldo a `StockService`.
+- [x] Cache de configuração versionado por `SAE.CACHE_VERSION` para evitar envenenamento após mudança de schema.
+- [ ] Idempotência forte para upload em lote com chave de requisição (pendente).
+- [ ] Testes unitários com mocks de GAS (pendente).
+
+### Sprint 3 — Refatoração Frontend
+- [x] Camada de comunicação única com timeout/retry/log estruturado/fila serial.
+- [x] Debounce aplicado para carregamento de módulo (`loadCurrentModuleDebounced`).
+- [x] Estado de módulo e modal extraído para factories (`createModuleState`, `createBulkModalState`) evitando vazamento entre operações.
+- [ ] Composables/módulos separados em arquivos dedicados (pendente para próxima etapa).
+
+### Sprint 4 — Integração & QA
+- [ ] E2E workflow completo (pendente).
+- [ ] Teste de performance com 10k+ linhas (pendente).
+- [ ] Staging + validação de quotas GAS (pendente).
+
+### 📌 Backlog Imediato
+- [ ] Criar issue "Refatoração de Arquitetura SAE" no repositório remoto.
+- [ ] Publicar contrato de API (request/response por endpoint) em documento dedicado.
+- [ ] Criar branch de backup `legacy/2026-03` antes de nova rodada de refactor estrutural.
+- [ ] Formalizar convenções de nomenclatura (público vs privado) em guia de contribuição.
+
+## 🏗️ Arquitetura de Namespace Global (SAE v2)
+
+### Padrão de Constantes
+Todas as constantes centralizadas estão no **namespace global `SAE`** definido em `models.gs`:
+
+```javascript
+SAE.CACHE_VERSION              // Versão do cache (incrementar se schema mudar)
+SAE.ESTOQUE_STATUS.CRITICO     // Thresholds de estoque (threshold: 0.5)
+SAE.ESTOQUE_STATUS.ALERTA      // Thresholds de estoque (threshold: 1.0)
+SAE.REQUIRED_FIELDS.LOGIN      // Campos obrigatórios para login
+SAE.SCHEMAS.INSUMO             // Schema de validação
+SAE.UI_TOKENS.COLORS           // Design tokens
+```
+
+### Ordem de Carregamento (Editor GAS)
+Arquivo `.gs` deve ser carregado nesta ordem para evitar `ReferenceError`:
+
+1. `models.gs` — Declara `var SAE = { ... }`
+2. `core.gs` — Infra compartilhada (`executeSafely`, logging e utilitários)
+3. `repositories.gs` — Helpers de acesso a planilhas/tabelas
+4. `services.gs` — Classes e serviços que usam `SAE.*`
+5. `movimentacoes-service.gs` — Operações de movimentação (manual, bulk, histórico e listagem)
+6. `insumos-service.gs` — Operações de catálogo de insumos e importação CSV
+7. `fornecedores-service.gs` — Operações de fornecedores e opções
+8. `analytics-service.gs` — Cálculos/KPIs e planejamento
+9. `setup-admin.gs` — Setup, admin e test harness
+10. `facade-support.gs` — Helpers compartilhados da fachada (delegação/validação/paginação/permissão)
+11. `api.gs` — API gateway (se existir)
+12. `code.gs` — Fachada final: constantes globais + entradas públicas
+13. Resto dos arquivos
+
+### Debugging no Console GAS
+Para testar se namespace está acessível:
+
+```javascript
+SAE
+SAE.CACHE_VERSION
+SAE.ESTOQUE_STATUS
+```
+
+Se receber `ReferenceError: SAE is not defined`, verifique:
+- `models.gs` está no topo da lista de arquivos;
+- não há erros de compilação em `models.gs`;
+- todos os arquivos foram salvos.
+
+### Adicionando Novas Constantes
+1. Adicione em `models.gs` dentro de `SAE = { ... }` ou `SAE.<chave> = ...`.
+2. Referencie como `SAE.MINHA_CONSTANTE` nos demais arquivos.
+3. Atualize comentários de dependência no topo do arquivo consumidor.
+
+### Sprint 2.2 — Idempotência em Uploads em Lote
+- [x] Criada infraestrutura de setup para aba `log_requisicoes_idempotencia` em `sae_setupDatabase()`.
+- [x] Implementado `IdempotencyService` com ciclo `PROCESSANDO` → `SUCESSO`/`FALHA`.
+- [x] `saveBulkMovimentacao` atualizado com `request_id` obrigatório, cache de requisição duplicada e marcação de sucesso/falha.
+- [x] Frontend passou a enviar `request_id` UUID único por operação de salvar lote.
+
+## 🧭 Plano de Modularização do `code.gs` (execução por PR)
+
+> Objetivo: reduzir risco de regressão no GAS modularizando por etapas, sem quebra de contratos atuais (`frontend`, `api.gs`, `Sheets`).
+
+### Princípios de execução
+- Não renomear funções públicas já consumidas pelo frontend durante migração.
+- Manter formato de retorno de `executeSafely` e paginação (`paginateRows`).
+- Migrar por blocos coesos e pequenos, validando sintaxe e smoke a cada PR.
+- Só refatorar comportamento após concluir extração estrutural.
+
+### PR1 — Core Infra
+**Escopo**
+- Extrair para `core.gs`:
+  - `executeSafely`, `saeLog_`, `safeStringify_`, `sanitizeForLog_`, `summarizeResultShape_`, `resolveExecutionContext_`.
+  - utilitários puros: `generateUUID`, `sanitizeCodigoAX`, `sanitizeNumber`, `toIsoString`, `normalizeHeader`.
+
+**Risco**: baixo (funções transversais).
+
+**Critérios de aceite**
+- `node --check` em todos `.gs`.
+- Fluxo de login e carregamento inicial sem regressão.
+
+### PR2 — Data Access / Repositório
+**Escopo**
+- Extrair para `repositories.gs`:
+  - `readTable`, `insertRow`, `batchInsertRows`, `findById`, `findRowIndexByUuid`, `updateRowByHeaderMap`, `getSheetOrThrow`, `getHeaders`.
+
+**Risco**: médio (impacta toda persistência).
+
+**Critérios de aceite**
+- CRUD de insumos/fornecedores funcionando.
+- Upload e movimentação manual persistindo corretamente.
+
+### PR3 — Movimentações Service
+**Escopo**
+- Extrair para `movimentacoes-service.gs`:
+  - `updateStockLevel`, `prepareBulkMovimentacao`, `saveBulkMovimentacao`, `getUploadHistory`, `listMovimentacoes`.
+  - helpers correlatos: `resolveInsumoForMovimentacao_`, `getCurrentStockByInsumo`, `applyStockMutation`, `sanitizeMovementRow`.
+
+**Risco**: médio-alto (módulo crítico de operação).
+
+**Critérios de aceite**
+- Sem duplicidade de gravação.
+- Idempotência de bulk preservada.
+- Tabela de movimentações paginada íntegra.
+
+### PR4 — Catálogo (Insumos/Fornecedores)
+**Escopo**
+- Extrair para `insumos-service.gs` e `fornecedores-service.gs`:
+  - `listInsumos`, `saveInsumo`, `inactivateInsumo`.
+  - `listFornecedores`, `saveFornecedor`, `inactivateFornecedor`, `getFornecedorOptions`.
+  - `importCSVData`, `seedFornecedoresFromInsumos`.
+
+**Risco**: médio.
+
+**Critérios de aceite**
+- Listagens paginadas e filtros mantendo comportamento atual.
+- Importação CSV sem regressão.
+
+### PR5 — Analytics / Planejamento
+**Escopo**
+- Extrair para `analytics-service.gs`:
+  - `getInsumosDataCore`, `enrichInsumo`, `calculateOrderPoint`, `calculateMonthlyConsumption`, `computeAbcCategoryMap`, `syncAbcCategories`, `computeStatus`, `applyInsumoFilters`, `getExecutiveSummary`.
+
+**Risco**: médio-alto (cálculos e indicadores).
+
+**Critérios de aceite**
+- `test_runAllCalculations` passando.
+- KPIs de dashboard equivalentes ao baseline.
+
+### PR6 — Setup/Admin/Test Harness
+**Escopo**
+- Extrair para `setup-admin.gs`:
+  - `sae_setupDatabase`, `runWeeklyBackupSnapshot`, `test_runAllCalculations`, `include`.
+
+**Risco**: baixo-médio.
+
+**Critérios de aceite**
+- Setup cria abas esperadas (incluindo idempotência).
+- Snapshot e teste interno executam sem erro.
+
+### PR7 — Slim `code.gs` (fachada)
+**Escopo**
+- Manter em `code.gs` apenas:
+  - constantes globais (`SAE_TABLES`, `SAE_CACHE`, `SAE_LOG_PREFIX`);
+  - funções públicas de entrada e delegação.
+- Remover duplicações restantes e organizar ordem lógica de leitura.
+
+**Risco**: baixo.
+
+**Critérios de aceite**
+- Assinaturas públicas inalteradas.
+- Frontend e `api.gs` consumindo os mesmos contratos.
+
+### Checklist de validação por PR
+- Sintaxe: `node --check` do backend concatenado + script do `index.html`.
+- Smoke manual:
+  - login;
+  - lançamento manual;
+  - upload em lote + idempotência;
+  - tabela de movimentações paginada;
+  - dashboard e compras.
+- Sem mudança de schema de planilha (exceto PR6 quando explicitamente necessário).
