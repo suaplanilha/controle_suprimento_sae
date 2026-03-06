@@ -327,7 +327,7 @@
                             <p v-if="dashboardRowsLimited" class="text-xs text-amber-300 border border-amber-600/40 rounded-xl px-3 py-2">Exibindo os primeiros {{ DASHBOARD_MAX_ROWS }} itens para preservar performance. Refine os filtros para análise detalhada.</p>
                             <div class="max-h-96 overflow-auto border border-slate-700 rounded-xl">
                                 <table class="w-full text-sm">
-                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-right">Consumo Mês Atual</th><th class="p-2 text-right">Disponível Hoje</th><th class="p-2 text-right">Ponto Ressupr.</th><th class="p-2 text-right">Dias Estimados</th><th class="p-2 text-right">Meses Estimados</th><th class="p-2 text-right">Média Mensal</th><th class="p-2 text-right">Lead Time</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Status</th></tr></thead>
+                                    <thead class="bg-slate-900/60 text-slate-300"><tr><th class="p-2 text-left">Código AX</th><th class="p-2 text-left">Descrição</th><th class="p-2 text-right">Consumo no Período</th><th class="p-2 text-right">Disponível Hoje</th><th class="p-2 text-right">Ponto Ressupr.</th><th class="p-2 text-right">Dias Estimados</th><th class="p-2 text-right">Meses Estimados</th><th class="p-2 text-right">Média Mensal</th><th class="p-2 text-right">Lead Time</th><th class="p-2 text-right">Consenso</th><th class="p-2 text-center">Status</th></tr></thead>
                                     <tbody>
                                         <template v-if="moduleLoading">
                                             <tr v-for="n in 8" :key="`dash-kpi-skeleton-${n}`" class="border-t border-slate-800">
@@ -338,7 +338,7 @@
                                             <tr v-for="item in dashboardRows" :key="item.uuid" class="border-t border-slate-800">
                                                 <td class="p-2">{{ item.codigo_ax || '-' }}</td>
                                                 <td class="p-2">{{ item.descricao || '-' }}</td>
-                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consumo_mes_atual) }}</td>
+                                                <td class="p-2 text-right">{{ sanitizeNumberUi(item.consumo_periodo) }}</td>
                                                 <td class="p-2 text-right">{{ sanitizeNumberUi(item.saldo_atual) }}</td>
                                                 <td class="p-2 text-right">{{ sanitizeNumberUi(item.ponto_ressuprimento) }}</td>
                                                 <td class="p-2 text-right">{{ item.dias_estimados_consumo === null ? '-' : sanitizeNumberUi(item.dias_estimados_consumo) }}</td>
@@ -353,7 +353,7 @@
                                         </template>
                                     </tbody>
                                 </table>
-                                <p v-if="!moduleLoading && !dashboardRows.length" class="p-3 text-slate-500">Sem dados para os filtros selecionados.</p>
+                                <p v-if="!moduleLoading && !dashboardRows.length" class="p-3 text-slate-500">Sem consumo no período/filtros selecionados.</p>
                             </div>
                             <p class="text-slate-300">{{ pageContent[currentPage] }}</p>
                         </template>
@@ -966,7 +966,8 @@
                     return {
                         year,
                         month,
-                        query: String(dashboardFilters.query || '').trim()
+                        query: String(dashboardFilters.query || '').trim(),
+                        period_only: true
                     };
                 };
 

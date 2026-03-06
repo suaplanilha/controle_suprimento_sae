@@ -18,12 +18,13 @@ const facade = fs.readFileSync('facade-support.gs', 'utf8');
 
 // Frontend: filtros enviados para getDashboardData
 must(index, /dashboardFilterPayload\s*=\s*\(\)\s*=>/, 'dashboardFilterPayload existe');
-must(index, /year\s*,\s*\n\s*month\s*,\s*\n\s*query:/, 'payload inclui year/month/query');
+must(index, /year\s*,\s*\n\s*month\s*,\s*\n\s*query:\s*String\(/, 'payload inclui year/month/query');
+must(index, /period_only:\s*true/, 'payload inclui period_only');
 must(index, /Ano inválido para dashboard/, 'validação de ano inválido');
 must(index, /Mês inválido para dashboard/, 'validação de mês inválido');
 
 // Frontend: tabela KPI mantém campos essenciais
-must(index, /Consumo Mês Atual/, 'coluna Consumo Mês Atual');
+must(index, /Consumo no Período/, 'coluna Consumo no Período');
 must(index, /Disponível Hoje/, 'coluna Disponível Hoje');
 must(index, /Ponto Ressupr\./, 'coluna Ponto Ressupr.');
 must(index, /Dias Estimados/, 'coluna Dias Estimados');

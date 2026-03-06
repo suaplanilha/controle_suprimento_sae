@@ -294,6 +294,11 @@ function applyInsumoFilters(insumo, filters) {
 
   if (filters.status && insumo.status_estoque !== filters.status) return false;
 
+  if (filters.period_only) {
+    const consumoPeriodo = Number(insumo.consumo_periodo || 0);
+    if (consumoPeriodo <= 0) return false;
+  }
+
   return true;
 }
 
