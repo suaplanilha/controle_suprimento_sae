@@ -134,7 +134,6 @@ Este documento descreve o status da evolução do módulo de Gestão de Programa
 - `year` *(number, opcional; default = ano atual)*
 - `month` *(number 1..12, opcional; quando ausente considera todos os meses do ano)*
 - `query` *(string, opcional; busca por código AX/descrição)*
-- `period_only` *(boolean, opcional; quando `true`, retorna apenas insumos com consumo no período filtrado)*
 
 ### Exemplo de payload
 ```javascript

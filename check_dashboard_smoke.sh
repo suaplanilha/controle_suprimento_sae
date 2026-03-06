@@ -19,7 +19,6 @@ const facade = fs.readFileSync('facade-support.gs', 'utf8');
 // Frontend: filtros enviados para getDashboardData
 must(index, /dashboardFilterPayload\s*=\s*\(\)\s*=>/, 'dashboardFilterPayload existe');
 must(index, /year\s*,\s*\n\s*month\s*,\s*\n\s*query:\s*String\(/, 'payload inclui year/month/query');
-must(index, /period_only:\s*true/, 'payload inclui period_only');
 must(index, /Ano inválido para dashboard/, 'validação de ano inválido');
 must(index, /Mês inválido para dashboard/, 'validação de mês inválido');
 

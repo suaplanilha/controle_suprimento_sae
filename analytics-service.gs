@@ -74,7 +74,7 @@ function buildMonthlyConsumptionSeries_(movimentos, period) {
 }
 
 function enrichInsumo(insumo, movimentos, config, period) {
-  const movs = movimentos.filter(m => m.insumo_id === insumo.uuid);
+  const movs = resolveMovimentosForInsumo_(insumo, movimentos);
 
   const saldo = movs.reduce((acc, mov) => {
     const q = sanitizeNumber(mov.quantidade);
@@ -115,6 +115,21 @@ function enrichInsumo(insumo, movimentos, config, period) {
     giro_estoque: consumoMensal > 0 ? Number((saldo / consumoMensal).toFixed(2)) : 0,
     status_estoque: computeStatus(saldo, orderPoint.ponto_ressuprimento)
   };
+}
+
+function resolveMovimentosForInsumo_(insumo, movimentos) {
+  const uuid = String(insumo.uuid || '').trim();
+  const codigoAx = sanitizeCodigoAX(insumo.codigo_ax);
+
+  return movimentos.filter(mov => {
+    const byUuid = String(mov.insumo_id || '').trim() === uuid;
+    if (byUuid) return true;
+
+    // Fallback para dados históricos migrados onde o insumo_id antigo não corresponde
+    // ao UUID atual do cadastro; utiliza código AX normalizado para reconciliação.
+    const byCodigo = sanitizeCodigoAX(mov.codigo_ax) === codigoAx;
+    return byCodigo;
+  });
 }
 
 function resolveAnalyticsPeriod_(filters) {
